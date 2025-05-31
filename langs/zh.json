@@ -1,0 +1,86 @@
+{
+  "title": "Wallet NITO",
+  "language_label": "语言：",
+  "languages": {
+    "fr": "Français",
+    "en": "English",
+    "de": "Deutsch",
+    "es": "Español",
+    "nl": "Nederlands",
+    "ru": "Русский",
+    "zh": "中文"
+  },
+  "generate_section": {
+    "title": "🎯 生成Nito私钥",
+    "generate_button": "🎲 生成",
+    "private_key_hex": "私钥（十六进制）：",
+    "private_key_wif": "WIF：",
+    "copy": "📋",
+    "reveal": "👁️ 显示",
+    "warning": "<span id=\"inactivityTimer\">[10:00]</span> ⚠️ 请立即保存私钥！它将在10分钟无操作或页面刷新后被删除。"
+  },
+  "import_section": {
+    "title": "📥 导入wallet",
+    "placeholder": "私钥（WIF或十六进制）",
+    "import_button": "📥 导入",
+    "balance": "余额：",
+    "refresh_button": "🔄"
+  },
+  "send_section": {
+    "title": "📤 发送NITO",
+    "destination_placeholder": "收件人地址",
+    "amount_placeholder": "金额（NITO）",
+    "fee_placeholder": "费用（NITO）",
+    "debit_label": "借记地址：",
+    "legacy_option": "Legacy",
+    "p2sh_option": "P2SH",
+    "bech32_option": "Bech32",
+    "prepare_button": "📝 准备",
+    "broadcast_button": "✅ 广播交易",
+    "cancel_button": "❌ 取消",
+    "signed_tx": "签名交易（十六进制）：",
+    "copy_tx": "📋 复制",
+    "consolidate_button": "合并所有UTXO"
+  },
+  "popup": {
+    "success": {
+      "message": "交易已发送！",
+      "progress": "进度：",
+      "txid": "TXID：",
+      "close": "关闭"
+    },
+    "consolidation": {
+      "confirm_message": "确认将UTXO合并到{{address}}？",
+      "confirm_button": "确认",
+      "cancel_button": "取消"
+    }
+  },
+  "errors": {
+    "invalid_address": "无效的收件人地址",
+    "invalid_wif": "无效的WIF密钥：{{message}}",
+    "invalid_hex": "无效的十六进制密钥：{{message}}",
+    "no_utxo": "没有可用的UTXO",
+    "insufficient_funds": "资金不足",
+    "low_amount": "金额过低：{{amount}}聪，最低要求：{{minimum}}聪",
+    "missing_element": "界面不完整，缺少元素{{id}}",
+    "node_connection": "连接NITO节点错误：{{message}}",
+    "import_empty": "请输入WIF私钥",
+    "invalid_addresses": "一个或多个无效地址",
+    "consolidation_low_utxo": "没有UTXO可合并（少于2个UTXO可用）。",
+    "consolidation_low_amount": "总金额过低，无法在费用后合并。",
+    "consolidation_invalid_type": "不支持的合并来源类型",
+    "generation_error": "生成错误：{{message}}",
+    "import_error": "导入错误：{{message}}",
+    "refresh_error": "刷新错误：{{message}}",
+    "transaction_error": "错误：{{message}}",
+    "broadcast_error": "广播错误：{{message}}",
+    "consolidation_error": "合并失败：{{message}}",
+    "element_not_found": "未找到元素！",
+    "nothing_to_copy": "无内容可复制！",
+    "reveal_to_copy": "请先显示密钥再复制！",
+    "copy_error": "复制错误",
+    "import_first": "请先导入wallet",
+    "no_transaction": "没有交易可广播",
+    "invalid_fields": "请用有效值填写所有字段"
+  }
+}

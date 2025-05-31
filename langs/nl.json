@@ -1,0 +1,86 @@
+{
+  "title": "Wallet NITO",
+  "language_label": "Taal:",
+  "languages": {
+    "fr": "Français",
+    "en": "English",
+    "de": "Deutsch",
+    "es": "Español",
+    "nl": "Nederlands",
+    "ru": "Русский",
+    "zh": "中文"
+  },
+  "generate_section": {
+    "title": "🎯 Nito privésleutel genereren",
+    "generate_button": "🎲 Genereren",
+    "private_key_hex": "Privésleutel (hex):",
+    "private_key_wif": "WIF:",
+    "copy": "📋",
+    "reveal": "👁️ Tonen",
+    "warning": "<span id=\"inactivityTimer\">[10:00]</span> ⚠️ Bewaar de privésleutel onmiddellijk! Deze wordt na 10 minuten inactiviteit of bij het vernieuwen van de pagina gewist."
+  },
+  "import_section": {
+    "title": "📥 Wallet importeren",
+    "placeholder": "Privésleutel (WIF of hex)",
+    "import_button": "📥 Importeren",
+    "balance": "Saldo:",
+    "refresh_button": "🔄"
+  },
+  "send_section": {
+    "title": "📤 NITO verzenden",
+    "destination_placeholder": "Adres van de ontvanger",
+    "amount_placeholder": "Bedrag (NITO)",
+    "fee_placeholder": "Kosten (NITO)",
+    "debit_label": "Debetadres:",
+    "legacy_option": "Legacy",
+    "p2sh_option": "P2SH",
+    "bech32_option": "Bech32",
+    "prepare_button": "📝 Voorbereiden",
+    "broadcast_button": "✅ Transactie uitzenden",
+    "cancel_button": "❌ Annuleren",
+    "signed_tx": "Ondertekende transactie (hex):",
+    "copy_tx": "📋 Kopiëren",
+    "consolidate_button": "Alle UTXOs consolideren"
+  },
+  "popup": {
+    "success": {
+      "message": "Transactie verzonden!",
+      "progress": "Voortgang:",
+      "txid": "TXID:",
+      "close": "Sluiten"
+    },
+    "consolidation": {
+      "confirm_message": "Consolidatie van UTXOs naar {{address}} bevestigen?",
+      "confirm_button": "Bevestigen",
+      "cancel_button": "Annuleren"
+    }
+  },
+  "errors": {
+    "invalid_address": "Ongeldig bestemmingsadres",
+    "invalid_wif": "Ongeldige WIF-sleutel: {{message}}",
+    "invalid_hex": "Ongeldige hex-sleutel: {{message}}",
+    "no_utxo": "Geen UTXO beschikbaar",
+    "insufficient_funds": "Onvoldoende fondsen",
+    "low_amount": "Bedrag te laag: {{amount}} satoshis, minimum vereist: {{minimum}} satoshis",
+    "missing_element": "Onvolledige interface, element {{id}} ontbreekt",
+    "node_connection": "Fout bij verbinding met NITO-node: {{message}}",
+    "import_empty": "Voer een WIF-privésleutel in",
+    "invalid_addresses": "Een of meer ongeldige adressen",
+    "consolidation_low_utxo": "Geen UTXOs om te consolideren (minder dan 2 UTXOs beschikbaar).",
+    "consolidation_low_amount": "Totaalbedrag te laag voor consolidatie na kosten.",
+    "consolidation_invalid_type": "Niet-ondersteund brontype voor consolidatie",
+    "generation_error": "Generatiefout: {{message}}",
+    "import_error": "Importfout: {{message}}",
+    "refresh_error": "Vernieuwingsfout: {{message}}",
+    "transaction_error": "Fout: {{message}}",
+    "broadcast_error": "Uitzendfout: {{message}}",
+    "consolidation_error": "Consolidatie mislukt: {{message}}",
+    "element_not_found": "Element niet gevonden!",
+    "nothing_to_copy": "Niets te kopiëren!",
+    "reveal_to_copy": "Toon de sleutel voordat u kopieert!",
+    "copy_error": "Fout bij kopiëren",
+    "import_first": "Importeer eerst een wallet",
+    "no_transaction": "Geen transactie om uit te zenden",
+    "invalid_fields": "Vul alle velden in met geldige waarden"
+  }
+}

@@ -1,0 +1,86 @@
+{
+  "title": "Wallet NITO",
+  "language_label": "Langue :",
+  "languages": {
+    "fr": "Français",
+    "en": "English",
+    "de": "Deutsch",
+    "es": "Español",
+    "nl": "Nederlands",
+    "ru": "Русский",
+    "zh": "中文"
+  },
+  "generate_section": {
+    "title": "🎯 Génération de clé privée Nito",
+    "generate_button": "🎲 Générer",
+    "private_key_hex": "Clé privée (hex) :",
+    "private_key_wif": "WIF :",
+    "copy": "📋",
+    "reveal": "👁️ Révéler",
+    "warning": "<span id=\"inactivityTimer\">[10:00]</span> ⚠️ Sauvegardez la clé privée immédiatement ! Elle sera effacée après 10 minutes d'inactivité ou après un rechargement de la page."
+  },
+  "import_section": {
+    "title": "📥 Importer un wallet",
+    "placeholder": "Clé privée (WIF ou hex)",
+    "import_button": "📥 Importer",
+    "balance": "Solde :",
+    "refresh_button": "🔄"
+  },
+  "send_section": {
+    "title": "📤 Envoyer NITO",
+    "destination_placeholder": "Adresse destinataire",
+    "amount_placeholder": "Montant (NITO)",
+    "fee_placeholder": "Frais (NITO)",
+    "debit_label": "Adresse à débiter :",
+    "legacy_option": "Legacy",
+    "p2sh_option": "P2SH",
+    "bech32_option": "Bech32",
+    "prepare_button": "📝 Préparer",
+    "broadcast_button": "✅ Diffuser transaction",
+    "cancel_button": "❌ Annuler",
+    "signed_tx": "Transaction signée (hex) :",
+    "copy_tx": "📋 Copier",
+    "consolidate_button": "Consolider tous les UTXO"
+  },
+  "popup": {
+    "success": {
+      "message": "Transaction envoyée !",
+      "progress": "Progression :",
+      "txid": "TXID :",
+      "close": "Fermer"
+    },
+    "consolidation": {
+      "confirm_message": "Confirmer la consolidation des UTXOs vers {{address}} ?",
+      "confirm_button": "Confirmer",
+      "cancel_button": "Annuler"
+    }
+  },
+  "errors": {
+    "invalid_address": "Adresse de destination invalide",
+    "invalid_wif": "Clé WIF invalide : {{message}}",
+    "invalid_hex": "Clé hexadécimale invalide : {{message}}",
+    "no_utxo": "Aucun UTXO disponible",
+    "insufficient_funds": "Fonds insuffisants",
+    "low_amount": "Montant trop bas : {{amount}} satoshis, minimum requis : {{minimum}} satoshis",
+    "missing_element": "Interface incomplète, élément {{id}} manquant",
+    "node_connection": "Erreur de connexion au nœud NITO : {{message}}",
+    "import_empty": "Veuillez entrer une clé privée WIF",
+    "invalid_addresses": "Une ou plusieurs adresses invalides",
+    "consolidation_low_utxo": "Aucun UTXO à regrouper (moins de 2 UTXOs disponibles).",
+    "consolidation_low_amount": "Montant total trop bas pour consolidation après frais.",
+    "consolidation_invalid_type": "Type de source non pris en charge pour la consolidation",
+    "generation_error": "Erreur génération : {{message}}",
+    "import_error": "Erreur import : {{message}}",
+    "refresh_error": "Erreur actualisation : {{message}}",
+    "transaction_error": "Erreur : {{message}}",
+    "broadcast_error": "Erreur diffusion : {{message}}",
+    "consolidation_error": "Échec de la consolidation : {{message}}",
+    "element_not_found": "Élément non trouvé !",
+    "nothing_to_copy": "Rien à copier !",
+    "reveal_to_copy": "Veuillez révéler la clé avant de la copier !",
+    "copy_error": "Erreur lors de la copie",
+    "import_first": "Importer d'abord un wallet",
+    "no_transaction": "Pas de transaction à diffuser",
+    "invalid_fields": "Remplissez tous les champs avec des valeurs valides"
+  }
+}

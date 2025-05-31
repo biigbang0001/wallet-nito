@@ -1,0 +1,86 @@
+{
+  "title": "Wallet NITO",
+  "language_label": "Idioma:",
+  "languages": {
+    "fr": "Français",
+    "en": "English",
+    "de": "Deutsch",
+    "es": "Español",
+    "nl": "Nederlands",
+    "ru": "Русский",
+    "zh": "中文"
+  },
+  "generate_section": {
+    "title": "🎯 Generar clave privada Nito",
+    "generate_button": "🎲 Generar",
+    "private_key_hex": "Clave privada (hex):",
+    "private_key_wif": "WIF:",
+    "copy": "📋",
+    "reveal": "👁️ Revelar",
+    "warning": "<span id=\"inactivityTimer\">[10:00]</span> ⚠️ ¡Guarde la clave privada inmediatamente! Se borrará después de 10 minutos de inactividad o al recargar la página."
+  },
+  "import_section": {
+    "title": "📥 Importar un wallet",
+    "placeholder": "Clave privada (WIF o hex)",
+    "import_button": "📥 Importar",
+    "balance": "Saldo:",
+    "refresh_button": "🔄"
+  },
+  "send_section": {
+    "title": "📤 Enviar NITO",
+    "destination_placeholder": "Dirección del destinatario",
+    "amount_placeholder": "Monto (NITO)",
+    "fee_placeholder": "Comisión (NITO)",
+    "debit_label": "Dirección de débito:",
+    "legacy_option": "Legacy",
+    "p2sh_option": "P2SH",
+    "bech32_option": "Bech32",
+    "prepare_button": "📝 Preparar",
+    "broadcast_button": "✅ Transmitir transacción",
+    "cancel_button": "❌ Cancelar",
+    "signed_tx": "Transacción firmada (hex):",
+    "copy_tx": "📋 Copiar",
+    "consolidate_button": "Consolidar todos los UTXOs"
+  },
+  "popup": {
+    "success": {
+      "message": "¡Transacción enviada!",
+      "progress": "Progreso:",
+      "txid": "TXID:",
+      "close": "Cerrar"
+    },
+    "consolidation": {
+      "confirm_message": "¿Confirmar la consolidación de UTXOs a {{address}}?",
+      "confirm_button": "Confirmar",
+      "cancel_button": "Cancelar"
+    }
+  },
+  "errors": {
+    "invalid_address": "Dirección de destino inválida",
+    "invalid_wif": "Clave WIF inválida: {{message}}",
+    "invalid_hex": "Clave hex inválida: {{message}}",
+    "no_utxo": "No hay UTXO disponible",
+    "insufficient_funds": "Fondos insuficientes",
+    "low_amount": "Monto demasiado bajo: {{amount}} satoshis, mínimo requerido: {{minimum}} satoshis",
+    "missing_element": "Interfaz incompleta, falta el elemento {{id}}",
+    "node_connection": "Error al conectar con el nodo NITO: {{message}}",
+    "import_empty": "Por favor, ingrese una clave privada WIF",
+    "invalid_addresses": "Una o más direcciones inválidas",
+    "consolidation_low_utxo": "No hay UTXOs para consolidar (menos de 2 UTXOs disponibles).",
+    "consolidation_low_amount": "Monto total demasiado bajo para consolidación después de comisiones.",
+    "consolidation_invalid_type": "Tipo de fuente no soportado para consolidación",
+    "generation_error": "Error de generación: {{message}}",
+    "import_error": "Error de importación: {{message}}",
+    "refresh_error": "Error de actualización: {{message}}",
+    "transaction_error": "Error: {{message}}",
+    "broadcast_error": "Error de transmisión: {{message}}",
+    "consolidation_error": "Fallo en la consolidación: {{message}}",
+    "element_not_found": "¡Elemento no encontrado!",
+    "nothing_to_copy": "¡Nada que copiar!",
+    "reveal_to_copy": "¡Por favor, revele la clave antes de copiar!",
+    "copy_error": "Error al copiar",
+    "import_first": "Importe un wallet primero",
+    "no_transaction": "No hay transacción para transmitir",
+    "invalid_fields": "Rellene todos los campos con valores válidos"
+  }
+}

@@ -1,0 +1,1 @@
+window.elliptic = require('elliptic');
