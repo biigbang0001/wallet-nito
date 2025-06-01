@@ -2,7 +2,8 @@
 <html lang="fr">
 <head>
   <meta charset="UTF-8"/>
-  <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+  <!-- Balise viewport pour définir l’échelle initiale sur mobile -->
+  <meta name="viewport" content="width=device-width, initial-scale=0.8, user-scalable=yes"/>
   <title>Wallet NITO</title>
   <link rel="icon" href="https://raw.githubusercontent.com/biigbang0001/NitoNode-Explorer/refs/heads/main/favicon-192.png"/>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.1.6/purify.min.js"></script>
@@ -14,8 +15,8 @@
       margin: 20px;
       background: linear-gradient(to bottom, #e6f0fa, #b3d4fc);
       transition: background 0.3s, color 0.3s;
-      position: relative; /* Pour positionner les flocons */
-      overflow-x: hidden; /* Éviter les débordements horizontaux */
+      position: relative;
+      overflow-x: hidden;
     }
     body.dark-mode {
       background: linear-gradient(to bottom, #2c3e50, #1a252f);
@@ -200,8 +201,8 @@
     .snowflake {
       position: absolute;
       top: -50px;
-      z-index: 999; /* En dessous du bouton theme-toggle (z-index: 1000) */
-      pointer-events: none; /* Les flocons ne bloquent pas les interactions */
+      z-index: 999;
+      pointer-events: none;
       animation: fall linear infinite;
     }
     @keyframes fall {
@@ -212,6 +213,12 @@
       100% {
         transform: translateY(100vh) rotate(360deg);
         opacity: 0.5;
+      }
+    }
+    /* Ajustement du zoom initial sur mobile */
+    @media (max-width: 768px) {
+      html, body {
+        zoom: 0.8;
       }
     }
   </style>
@@ -286,26 +293,76 @@
       const snowflake = document.createElement('img');
       snowflake.src = 'https://raw.githubusercontent.com/biigbang0001/NitoNode-Explorer/refs/heads/main/favicon-192.png';
       snowflake.className = 'snowflake';
-      snowflake.style.width = '20px'; // Taille du logo Nito
+      snowflake.style.width = '20px';
       snowflake.style.height = '20px';
-      snowflake.style.left = Math.random() * 100 + 'vw'; // Position horizontale aléatoire
-      snowflake.style.animationDuration = Math.random() * 5 + 5 + 's'; // Durée de chute entre 5 et 10 secondes
-      snowflake.style.animationDelay = Math.random() * 5 + 's'; // Délai aléatoire avant le début de l’animation
-      snowflake.style.opacity = Math.random() * 0.5 + 0.5; // Opacité aléatoire entre 0.5 et 1
+      snowflake.style.left = Math.random() * 100 + 'vw';
+      snowflake.style.animationDuration = Math.random() * 5 + 5 + 's';
+      snowflake.style.animationDelay = Math.random() * 5 + 's';
+      snowflake.style.opacity = Math.random() * 0.5 + 0.5;
       document.body.appendChild(snowflake);
 
-      // Supprimer le flocon après l’animation pour éviter l’accumulation
       setTimeout(() => {
         snowflake.remove();
       }, (parseFloat(snowflake.style.animationDuration) + parseFloat(snowflake.style.animationDelay)) * 1000);
     }
 
-    // Créer un flocon toutes les 500ms
     setInterval(createSnowflake, 500);
 
-    // Créer quelques flocons immédiatement au chargement
     for (let i = 0; i < 10; i++) {
       createSnowflake();
+    }
+  </script>
+
+  <!-- Script pour réinitialiser le zoom sur mobile -->
+  <script>
+    // Détecter si l’appareil est un mobile
+    const isMobile = /Mobi|Android|iPhone|iPad|iPod|Opera Mini|IEMobile|WPDesktop/.test(navigator.userAgent);
+
+    if (isMobile) {
+      let lastScale = 1;
+      let isZooming = false;
+
+      // Écouter les événements de toucher pour détecter un zoom
+      document.addEventListener('touchstart', (e) => {
+        if (e.touches.length === 2) {
+          isZooming = true;
+        }
+      });
+
+      document.addEventListener('touchend', () => {
+        isZooming = false;
+        // Réinitialiser le zoom après un court délai pour permettre au navigateur de mettre à jour
+        setTimeout(() => {
+          resetZoom();
+        }, 300);
+      });
+
+      // Fonction pour réinitialiser le zoom
+      function resetZoom() {
+        // Forcer l’échelle à 0.8 via CSS zoom
+        document.body.style.zoom = '0.8';
+        // Forcer également via meta viewport
+        const viewport = document.querySelector('meta[name="viewport"]');
+        viewport.setAttribute('content', 'width=device-width, initial-scale=0.8, user-scalable=yes');
+      }
+
+      // Écouter les changements de taille de fenêtre (peut aider sur certains appareils)
+      window.addEventListener('resize', () => {
+        if (!isZooming) {
+          resetZoom();
+        }
+      });
+
+      // Vérification périodique pour s’assurer que le zoom est correct
+      setInterval(() => {
+        if (!isZooming) {
+          const currentScale = window.visualViewport ? window.visualViewport.scale : 1;
+          if (currentScale !== lastScale) {
+            lastScale = currentScale;
+            resetZoom();
+          }
+        }
+      }, 500);
     }
   </script>
 
