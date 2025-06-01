@@ -14,6 +14,8 @@
       margin: 20px;
       background: linear-gradient(to bottom, #e6f0fa, #b3d4fc);
       transition: background 0.3s, color 0.3s;
+      position: relative; /* Pour positionner les flocons */
+      overflow-x: hidden; /* Éviter les débordements horizontaux */
     }
     body.dark-mode {
       background: linear-gradient(to bottom, #2c3e50, #1a252f);
@@ -180,7 +182,6 @@
     .blurred-input {
       filter: blur(5px);
     }
-    /* Style pour l'encart du compteur */
     .counter-box {
       text-align: center;
       margin: 10px 0;
@@ -194,6 +195,24 @@
     body.dark-mode .counter-box {
       background: #546e7a;
       color: #e0e0e0;
+    }
+    /* Styles pour l’effet de neige */
+    .snowflake {
+      position: absolute;
+      top: -50px;
+      z-index: 999; /* En dessous du bouton theme-toggle (z-index: 1000) */
+      pointer-events: none; /* Les flocons ne bloquent pas les interactions */
+      animation: fall linear infinite;
+    }
+    @keyframes fall {
+      0% {
+        transform: translateY(-50px) rotate(0deg);
+        opacity: 1;
+      }
+      100% {
+        transform: translateY(100vh) rotate(360deg);
+        opacity: 0.5;
+      }
     }
   </style>
 </head>
@@ -260,6 +279,35 @@
       <button class="copy-btn" id="copyTxHex" data-i18n="send_section.copy_tx">📋 Copier</button>
     </div>
   </div>
+
+  <!-- Script pour l’effet de neige -->
+  <script>
+    function createSnowflake() {
+      const snowflake = document.createElement('img');
+      snowflake.src = 'https://raw.githubusercontent.com/biigbang0001/NitoNode-Explorer/refs/heads/main/favicon-192.png';
+      snowflake.className = 'snowflake';
+      snowflake.style.width = '20px'; // Taille du logo Nito
+      snowflake.style.height = '20px';
+      snowflake.style.left = Math.random() * 100 + 'vw'; // Position horizontale aléatoire
+      snowflake.style.animationDuration = Math.random() * 5 + 5 + 's'; // Durée de chute entre 5 et 10 secondes
+      snowflake.style.animationDelay = Math.random() * 5 + 's'; // Délai aléatoire avant le début de l’animation
+      snowflake.style.opacity = Math.random() * 0.5 + 0.5; // Opacité aléatoire entre 0.5 et 1
+      document.body.appendChild(snowflake);
+
+      // Supprimer le flocon après l’animation pour éviter l’accumulation
+      setTimeout(() => {
+        snowflake.remove();
+      }, (parseFloat(snowflake.style.animationDuration) + parseFloat(snowflake.style.animationDelay)) * 1000);
+    }
+
+    // Créer un flocon toutes les 500ms
+    setInterval(createSnowflake, 500);
+
+    // Créer quelques flocons immédiatement au chargement
+    for (let i = 0; i < 10; i++) {
+      createSnowflake();
+    }
+  </script>
 
   <script type="module" src="./wallet.js"></script>
 </body>
