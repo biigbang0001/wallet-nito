@@ -10,6 +10,7 @@
     "ru": "Русский",
     "zh": "中文"
   },
+  "counter": { "keys_generated": "🔑 Nito密钥生成：" },
   "generate_section": {
     "title": "🎯 生成Nito私钥",
     "generate_button": "🎲 生成",

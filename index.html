@@ -60,6 +60,7 @@
       padding: 10px 20px;
       border-radius: 5px;
       cursor: pointer;
+      margin: 5px;
     }
     body.dark-mode button {
       background: #1976d2;
@@ -179,6 +180,21 @@
     .blurred-input {
       filter: blur(5px);
     }
+    /* Style pour l'encart du compteur */
+    .counter-box {
+      text-align: center;
+      margin: 10px 0;
+      padding: 10px;
+      background: #f0f8ff;
+      border-radius: 8px;
+      box-shadow: 0 2px 4px rgba(0,0,0,.1);
+      font-size: 16px;
+      color: #1e3a8a;
+    }
+    body.dark-mode .counter-box {
+      background: #546e7a;
+      color: #e0e0e0;
+    }
   </style>
 </head>
 <body>
@@ -196,6 +212,11 @@
     </select>
   </div>
   <h1><img src="https://raw.githubusercontent.com/biigbang0001/NitoNode-Explorer/refs/heads/main/favicon-192.png" alt="">Wallet NITO</h1>
+
+  <!-- Encart pour le compteur -->
+  <div class="counter-box">
+    <span data-i18n="counter.keys_generated">🔑 Clés Nito générées :</span> <span id="keyCounter">0</span>
+  </div>
 
   <div class="section">
     <h2 data-i18n="generate_section.title">🎯 Génération de clé privée Nito</h2>

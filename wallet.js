@@ -104,6 +104,45 @@ async function rpc(method, params) {
   }
 }
 
+// Fonction pour récupérer la valeur du compteur
+async function fetchCounter() {
+  try {
+    const res = await fetch('/api/get-counter', { method: 'GET' });
+    if (!res.ok) throw new Error(`HTTP Error: ${res.status}`);
+    const data = await res.json();
+    return data.count;
+  } catch (e) {
+    console.error('Error fetching counter:', e);
+    return 0; // Valeur par défaut en cas d'erreur
+  }
+}
+
+// Fonction pour incrémenter le compteur
+async function incrementCounter() {
+  try {
+    const res = await fetch('/api/increment-counter', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'increment' })
+    });
+    if (!res.ok) throw new Error(`HTTP Error: ${res.status}`);
+    const data = await res.json();
+    return data.count;
+  } catch (e) {
+    console.error('Error incrementing counter:', e);
+    return null;
+  }
+}
+
+// Mettre à jour l'affichage du compteur
+async function updateCounterDisplay() {
+  const counterElement = document.getElementById('keyCounter');
+  if (counterElement) {
+    const count = await fetchCounter();
+    counterElement.textContent = count;
+  }
+}
+
 async function getExplorerUrl(txid) {
   const primaryUrl = `https://explorer.nito.network/tx/${txid}`;
   const fallbackUrl = `https://nitoexplorer.org/tx/${txid}`;
@@ -707,7 +746,7 @@ function copyToClipboard(id) {
   textArea.select();
   try {
     document.execCommand('copy');
-    alert(i18next.t('errors.copied'));
+    alert(i18next.t('copied'));
   } catch (err) {
     console.error('Copy error:', err);
     alert(i18next.t('errors.copy_error'));
@@ -776,7 +815,8 @@ window.addEventListener('load', async () => {
       'walletAddress', 'walletBalance', 'txHexContainer', 'signedTx', 'copyGenHex',
       'copyGenWif', 'copyTxHex', 'generatedAddress',
       'privateKeyHex', 'privateKey', 'revealHex', 'revealWif', 'revealWifInput',
-      'inactivityTimer'
+      'inactivityTimer',
+      'keyCounter' // Ajout pour le compteur
     ];
     for (const id of requiredIds) {
       if (!$(id)) {
@@ -789,6 +829,9 @@ window.addEventListener('load', async () => {
     await initNetworkParams();
     const info = await rpc('getblockchaininfo');
     console.log('Connected to NITO node:', info);
+
+    // Récupérer et afficher la valeur initiale du compteur au chargement
+    await updateCounterDisplay();
 
     const themeToggle = $('themeToggle');
     const body = document.body;
@@ -897,6 +940,11 @@ window.addEventListener('load', async () => {
             }, 10000);
           };
         }
+
+        // Incrémenter le compteur après la génération réussie
+        await incrementCounter();
+        // Mettre à jour l'affichage du compteur
+        await updateCounterDisplay();
       } catch (e) {
         alert(i18next.t('errors.generation_error', { message: e.message }));
         console.error('Generation error:', e);

@@ -10,6 +10,7 @@
     "ru": "Русский",
     "zh": "中文"
   },
+  "counter": { "keys_generated": "🔑 Clés Nito générées :" },
   "generate_section": {
     "title": "🎯 Génération de clé privée Nito",
     "generate_button": "🎲 Générer",
