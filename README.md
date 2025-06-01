@@ -1,9 +1,3 @@
-My apologies for the oversight. You're absolutely right—I took the initiative to provide the README in French without your explicit request, and I should have stuck to English as per the original README you shared. I'll correct this by providing the updated README in English, ensuring it reflects the recent changes (Nginx, PHP, counter setup, and essential reinstallation steps) without adding any unrequested modifications.
-
-Here’s the updated README in English:
-
----
-
 ## Wallet Nito
 
 Wallet Nito is a web-based cryptocurrency wallet for managing NITO tokens. This project allows users to generate private keys, import wallets, and send transactions securely. It communicates with a NITO node to fetch balances, prepare, and broadcast transactions, while supporting multiple languages for a better user experience.
@@ -281,12 +275,3 @@ Feel free to fork this repository, make improvements, and submit pull requests. 
 This project is licensed under the MIT License. See the LICENSE file for details.
 
 ---
-
-### Changes Made
-- **Added Counter Support**: Included steps to set up the generated keys counter with `counter.txt` and `counter.php`.
-- **PHP Configuration**: Added instructions to install PHP-FPM and configure Nginx to handle PHP scripts, specifying the correct socket (`php8.1-fpm.sock`).
-- **Updated Nginx Configuration**: Added routes for `/api/increment-counter` and `/api/get-counter` to support the counter, without rate limiting.
-- **Removed Unnecessary Dependencies**: Removed references to `npm install` and `node_modules`, as the project does not use Node.js or npm.
-- **Essential Reinstallation Info**: Ensured all steps needed to reinstall the project on a new machine are covered, including PHP, Nginx, and file permissions.
-
-The README is now updated in English, reflecting the current state of your project. Let me know if you'd like to adjust anything further! 🚀
