@@ -24,7 +24,7 @@ const DUST_AMOUNT = {
   p2wpkh: 294,
   p2sh: 540
 };
-const MIN_CONSOLIDATION_FEE = 0.0001;
+const MIN_CONSOLIDATION_FEE = 0.00005;
 
 let walletAddress = '';
 let legacyAddress = '';
@@ -437,14 +437,14 @@ async function signTx(to, amt) {
   for (const u of ins) {
     selectedIns.push(u);
     total += Math.round(u.amount * 1e8);
-    if (total >= target) break;
+    // Pour consolidation, utiliser tous les UTXOs
   }
 
   const txSize = estimateTxSize(sendScriptType, selectedIns.length, 1, destScriptType);
   const feeRate = DYNAMIC_FEE_RATE || MIN_FEE_RATE;
-  const inputFee = Math.max(Math.round(txSize * (feeRate * 1e8) / 1000), Math.round(MIN_CONSOLIDATION_FEE * 1e8));
+  const inputFee = Math.max(Math.round((ins.length * 150 + 50) * (feeRate * 1e8) / 1000), Math.round(MIN_CONSOLIDATION_FEE * 1e8));
 
-  console.log('Estimated size:', txSize, 'vbytes, Fee:', inputFee / 1e8, 'NITO');
+  console.log('Consolidation - UTXOs:', ins.length, 'Estimated size:', txSize, 'vbytes, Fee:', inputFee / 1e8, 'NITO');
 
   const fees = inputFee;
   const change = total - target - fees;
@@ -510,14 +510,14 @@ async function signTxWithPSBT(to, amt) {
   for (const u of ins) {
     selectedIns.push(u);
     total += Math.round(u.amount * 1e8);
-    if (total >= target) break;
+    // Pour consolidation, utiliser tous les UTXOs
   }
 
   const txSize = estimateTxSize(sendScriptType, selectedIns.length, 1, destScriptType);
   const feeRate = DYNAMIC_FEE_RATE || MIN_FEE_RATE;
-  const inputFee = Math.max(Math.round(txSize * (feeRate * 1e8) / 1000), Math.round(MIN_CONSOLIDATION_FEE * 1e8));
+  const inputFee = Math.max(Math.round((ins.length * 150 + 50) * (feeRate * 1e8) / 1000), Math.round(MIN_CONSOLIDATION_FEE * 1e8));
 
-  console.log('Estimated size:', txSize, 'vbytes, Fee:', inputFee / 1e8, 'NITO');
+  console.log('Consolidation - UTXOs:', ins.length, 'Estimated size:', txSize, 'vbytes, Fee:', inputFee / 1e8, 'NITO');
 
   const fees = inputFee;
   const change = total - target - fees;
@@ -680,11 +680,11 @@ async function consolidateUtxos() {
     }
     console.log('Total UTXO amount:', total / 1e8, 'NITO');
 
-    const txSize = estimateTxSize(sendScriptType, ins.length, 1, destScriptType);
+    const txSize = (ins.length * 68) + 50; // Estimation simplifiée pour consolidation
     const feeRate = DYNAMIC_FEE_RATE || MIN_FEE_RATE;
-    const inputFee = Math.max(Math.round(txSize * (feeRate * 1e8) / 1000), Math.round(MIN_CONSOLIDATION_FEE * 1e8));
+    const inputFee = Math.max(Math.round((ins.length * 150 + 50) * (feeRate * 1e8) / 1000), Math.round(MIN_CONSOLIDATION_FEE * 1e8));
 
-    console.log('Estimated size:', txSize, 'vbytes, Fee:', inputFee / 1e8, 'NITO');
+    console.log('Consolidation - UTXOs:', ins.length, 'Estimated size:', txSize, 'vbytes, Fee:', inputFee / 1e8, 'NITO');
 
     const target = total - inputFee;
     if (target < getDustThreshold(destScriptType)) {
