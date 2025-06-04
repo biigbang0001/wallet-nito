@@ -2,7 +2,7 @@
 <html lang="fr">
 <head>
   <meta charset="UTF-8"/>
-  <!-- Balise viewport pour définir l’échelle initiale sur mobile -->
+  <!-- Balise viewport pour définir l'échelle initiale sur mobile -->
   <meta name="viewport" content="width=device-width, initial-scale=0.8, user-scalable=yes"/>
   <title>Wallet NITO</title>
   <link rel="icon" href="https://raw.githubusercontent.com/biigbang0001/NitoNode-Explorer/refs/heads/main/favicon-192.png"/>
@@ -74,17 +74,29 @@
     body.dark-mode button:hover {
       background: #1565c0;
     }
-    input, select {
+    button:disabled {
+      background: #94a3b8;
+      cursor: not-allowed;
+    }
+    body.dark-mode button:disabled {
+      background: #455a64;
+    }
+    input, select, textarea {
       width: 100%;
       padding: 8px;
       margin: 5px 0;
       border: 1px solid #93c5fd;
       border-radius: 5px;
+      box-sizing: border-box;
     }
-    body.dark-mode input, body.dark-mode select {
+    body.dark-mode input, body.dark-mode select, body.dark-mode textarea {
       background: #455a64;
       color: #e0e0e0;
       border: 1px solid #90caf9;
+    }
+    textarea {
+      resize: vertical;
+      min-height: 100px;
     }
     p, li {
       color: #1e3a8a;
@@ -197,7 +209,7 @@
       background: #546e7a;
       color: #e0e0e0;
     }
-    /* Styles pour l’effet de neige */
+    /* Styles pour l'effet de neige */
     .snowflake {
       position: absolute;
       top: -50px;
@@ -221,10 +233,115 @@
         zoom: 0.8;
       }
     }
+
+    /* Styles pour la messagerie */
+    .message-list {
+      max-height: 300px;
+      overflow-y: auto;
+      margin-top: 10px;
+      padding: 5px;
+      border: 1px solid #93c5fd;
+      border-radius: 5px;
+      background: #f8fafc;
+    }
+    body.dark-mode .message-list {
+      background: #455a64;
+      border: 1px solid #90caf9;
+    }
+    .message-item {
+      padding: 10px;
+      margin: 5px 0;
+      background: #e0f2fe;
+      border-radius: 5px;
+      border-left: 4px solid #2196f3;
+      word-break: break-word;
+    }
+    body.dark-mode .message-item {
+      background: #546e7a;
+      color: #e0e0e0;
+    }
+    .message-item.error {
+      border-left-color: #e57373;
+      background: #ffebee;
+    }
+    body.dark-mode .message-item.error {
+      background: #5d4037;
+    }
+    .message-item.read {
+      border-left-color: #4caf50;
+      background: #e8f5e8;
+    }
+    body.dark-mode .message-item.read {
+      background: #2e7d32;
+    }
+    .message-status {
+      font-size: 12px;
+      color: #666;
+      margin-top: 5px;
+      font-style: italic;
+    }
+    body.dark-mode .message-status {
+      color: #bbb;
+    }
+    .char-counter {
+      font-size: 12px;
+      color: #666;
+      margin-top: 5px;
+      text-align: right;
+    }
+    body.dark-mode .char-counter {
+      color: #bbb;
+    }
+    .char-counter.over-limit {
+      color: #e57373;
+      font-weight: bold;
+    }
+    .send-form {
+      margin-top: 10px;
+      padding: 15px;
+      border: 1px solid #93c5fd;
+      border-radius: 5px;
+      background: #f0f8ff;
+      display: none;
+    }
+    body.dark-mode .send-form {
+      background: #455a64;
+      border: 1px solid #90caf9;
+    }
+    .unread-counter {
+      display: none;
+      background: #e57373;
+      color: white;
+      padding: 5px 10px;
+      border-radius: 15px;
+      font-size: 14px;
+      margin-bottom: 10px;
+      text-align: center;
+    }
+    #loadingSpinner {
+      display: none;
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      border: 4px solid #f3f3f3;
+      border-top: 4px solid #1e3a8a;
+      border-radius: 50%;
+      width: 30px;
+      height: 30px;
+      animation: spin 1s linear infinite;
+      z-index: 1001;
+    }
+    @keyframes spin {
+      0% { transform: translate(-50%, -50%) rotate(0deg); }
+      100% { transform: translate(-50%, -50%) rotate(360deg); }
+    }
   </style>
 </head>
 <body>
+  <div id="loadingSpinner"></div>
   <button class="theme-toggle" id="themeToggle">🌙</button>
+
   <div class="section">
     <label for="languageSelect" data-i18n="language_label">Langue :</label>
     <select id="languageSelect">
@@ -237,6 +354,7 @@
       <option value="zh" data-i18n="languages.zh">中文</option>
     </select>
   </div>
+
   <h1><img src="https://raw.githubusercontent.com/biigbang0001/NitoNode-Explorer/refs/heads/main/favicon-192.png" alt="">Wallet NITO</h1>
 
   <!-- Encart pour le compteur -->
@@ -271,8 +389,6 @@
     <input id="feeNito" type="number" step="0.00000001" placeholder="Frais (NITO)" value="0.0001" data-i18n="[placeholder]send_section.fee_placeholder"/>
     <label data-i18n="send_section.debit_label">Adresse à débiter :</label>
     <select id="debitAddressType">
-      <option value="legacy" data-i18n="send_section.legacy_option">Legacy</option>
-      <option value="p2sh" data-i18n="send_section.p2sh_option">P2SH</option>
       <option value="bech32" selected data-i18n="send_section.bech32_option">Bech32</option>
     </select>
     <button id="prepareTxButton" data-i18n="send_section.prepare_button">📝 Préparer</button>
@@ -287,7 +403,57 @@
     </div>
   </div>
 
-  <!-- Script pour l’effet de neige -->
+  <!-- NOUVELLE SECTION MESSAGERIE -->
+  <div class="section">
+    <h2 data-i18n="encrypted_messaging.title">🔒 Messagerie cryptée</h2>
+
+    <!-- Publication de clé publique -->
+    <button id="publishPubkeyButton" data-i18n="encrypted_messaging.publish_pubkey">🔑 Publier ma clé publique</button>
+    <p style="font-size: 14px; color: #666; margin-top: 5px;">
+      📋 <span data-i18n="encrypted_messaging.publish_info">Publiez votre clé publique une fois pour permettre aux autres de vous envoyer des messages cryptés.</span>
+    </p>
+
+    <hr style="margin: 20px 0; border: none; border-top: 1px solid #e0e0e0;">
+
+    <!-- Écriture de message -->
+    <h3 data-i18n="encrypted_messaging.write_title">✍️ Écrire un message</h3>
+    <textarea id="messageInput" maxlength="5000" placeholder="Votre message (max 5000 caractères)" data-i18n="[placeholder]encrypted_messaging.message_placeholder"></textarea>
+    <p class="char-counter" id="messageCharCounter">0/5000 caractères (1 transaction - 0.0001 NITO)</p>
+
+    <div style="margin-top: 10px;">
+      <button id="sendMessageButton" data-i18n="encrypted_messaging.send_button">📤 Envoyer</button>
+      <button id="clearMessageButton" data-i18n="encrypted_messaging.clear_button">🗑️ Effacer</button>
+    </div>
+
+    <!-- Formulaire d'envoi (masqué par défaut) -->
+    <div id="sendMessageForm" class="send-form">
+      <h4>📧 Destinataire du message</h4>
+      <input id="recipientAddress" placeholder="Adresse bech32 du destinataire (nito1...)" data-i18n="[placeholder]encrypted_messaging.recipient_placeholder"/>
+      <p id="sendMessageCost" class="char-counter">Coût estimé: 0.0001 NITO (1 transaction)</p>
+      <div style="margin-top: 10px;">
+        <button id="confirmSendButton" data-i18n="encrypted_messaging.validate_button">✅ Confirmer l'envoi</button>
+        <button id="cancelSendButton" data-i18n="encrypted_messaging.cancel_button">❌ Annuler</button>
+      </div>
+    </div>
+
+    <hr style="margin: 20px 0; border: none; border-top: 1px solid #e0e0e0;">
+
+    <!-- Lecture des messages -->
+    <h3 data-i18n="encrypted_messaging.read_title">📬 Lire les messages</h3>
+    <button id="refreshMessagesButton" data-i18n="encrypted_messaging.refresh_messages">🔄 Actualiser les messages</button>
+
+    <!-- Compteur de messages non lus -->
+    <div id="unreadMessages" class="unread-counter">
+      <span id="unreadCount">0</span> 📧 <span data-i18n="encrypted_messaging.unread_messages">messages non lus</span>
+    </div>
+
+    <!-- Liste des messages -->
+    <div id="messageList" class="message-list" style="display: none;">
+      <div class="message-item">Aucun message reçu</div>
+    </div>
+  </div>
+
+  <!-- Script pour l'effet de neige -->
   <script>
     function createSnowflake() {
       const snowflake = document.createElement('img');
@@ -315,7 +481,7 @@
 
   <!-- Script pour réinitialiser le zoom sur mobile -->
   <script>
-    // Détecter si l’appareil est un mobile
+    // Détecter si l'appareil est un mobile
     const isMobile = /Mobi|Android|iPhone|iPad|iPod|Opera Mini|IEMobile|WPDesktop/.test(navigator.userAgent);
 
     if (isMobile) {
@@ -339,7 +505,7 @@
 
       // Fonction pour réinitialiser le zoom
       function resetZoom() {
-        // Forcer l’échelle à 0.8 via CSS zoom
+        // Forcer l'échelle à 0.8 via CSS zoom
         document.body.style.zoom = '0.8';
         // Forcer également via meta viewport
         const viewport = document.querySelector('meta[name="viewport"]');
@@ -353,7 +519,7 @@
         }
       });
 
-      // Vérification périodique pour s’assurer que le zoom est correct
+      // Vérification périodique pour s'assurer que le zoom est correct
       setInterval(() => {
         if (!isZooming) {
           const currentScale = window.visualViewport ? window.visualViewport.scale : 1;

@@ -2,6 +2,7 @@ import * as bitcoin from 'https://esm.sh/bitcoinjs-lib@6.1.5?bundle';
 import * as tinysecp from 'https://esm.sh/@bitcoin-js/tiny-secp256k1-asmjs@2.2.3';
 import ECPairFactory from 'https://esm.sh/ecpair@3.0.0';
 import { Buffer } from 'https://esm.sh/buffer@6.0.3';
+import "./messaging.js";
 window.Buffer = Buffer;
 
 const ECPair = ECPairFactory(tinysecp);
@@ -178,6 +179,39 @@ async function checkTransactionConfirmation(txid) {
   }
 }
 
+// NOUVELLE FONCTION: Filtrer les UTXOs avec OP_RETURN
+async function filterOpReturnUtxos(utxos) {
+  const filteredUtxos = [];
+  for (const utxo of utxos) {
+    try {
+      const tx = await rpc('getrawtransaction', [utxo.txid, true]);
+      
+      // ✅ CORRECTION: Vérifier SEULEMENT l'output spécifique de l'UTXO
+      const specificOutput = tx.vout[utxo.vout];
+      if (!specificOutput) {
+        console.warn(`Output ${utxo.vout} non trouvé dans transaction ${utxo.txid}`);
+        continue;
+      }
+      
+      const hasOpReturn = specificOutput.scriptPubKey && 
+                         specificOutput.scriptPubKey.hex && 
+                         specificOutput.scriptPubKey.hex.startsWith('6a');
+      
+      if (!hasOpReturn) {
+        filteredUtxos.push(utxo);
+        console.log(`✅ UTXO ${utxo.txid}:${utxo.vout} - Pas d'OP_RETURN sur cet output`);
+      } else {
+        console.log(`❌ UTXO ${utxo.txid}:${utxo.vout} - Contient OP_RETURN, exclu`);
+      }
+    } catch (e) {
+      // Si erreur de lecture, on ne peut pas vérifier, donc on exclut
+      console.warn(`Impossible de vérifier UTXO ${utxo.txid}:${utxo.vout}, exclusion`);
+    }
+  }
+  console.log(`UTXOs filtrés: ${filteredUtxos.length}/${utxos.length} (exclus OP_RETURN)`);
+  return filteredUtxos;
+}
+
 async function showSuccessPopup(txid) {
   const body = document.body;
   let progress = 0;
@@ -224,6 +258,8 @@ async function showSuccessPopup(txid) {
 
   closeButton.onclick = () => document.body.removeChild(popup);
 }
+
+  window.showSuccessPopup = showSuccessPopup;
 
 async function initNetworkParams() {
   try {
@@ -336,7 +372,7 @@ async function utxos(addr) {
       };
     });
   } catch (e) {
-    console.error('Error fetching UTXO:', e);
+console.error('Error fetching UTXO:', e);
     throw e;
   }
 }
@@ -415,14 +451,18 @@ async function transferToP2SH(amt) {
   return await signTxWithPSBT(p2shAddress, amt);
 }
 
-async function signTx(to, amt) {
+async function signTx(to, amt, isConsolidation = false) {
   updateLastActionTime();
   if (!walletAddress || !walletKeyPair || !walletPublicKey) throw Error(i18next.t('errors.import_first'));
 
-  console.log('Starting Bech32 to Bech32 transaction preparation for:', to, 'Amount:', amt);
+  console.log('Starting Bech32 to Bech32 transaction preparation for:', to, 'Amount:', amt, 'Consolidation:', isConsolidation);
 
   const ins = await utxos(walletAddress);
   if (!ins.length) throw new Error(i18next.t('errors.no_utxo'));
+
+  // MODIFICATION: Filtrer les UTXOs avec OP_RETURN pour les transactions normales
+  const workingIns = isConsolidation ? ins : await filterOpReturnUtxos(ins);
+  if (!workingIns.length) throw new Error('Aucun UTXO disponible (tous contiennent des OP_RETURN, veuillez consolider les UTXOs)');
 
   const sendScriptType = getAddressType(walletAddress);
   if (sendScriptType !== 'p2wpkh') throw new Error(i18next.t('errors.only_bech32_supported'));
@@ -431,20 +471,32 @@ async function signTx(to, amt) {
   console.log('Script type - sender:', sendScriptType, 'destination:', destScriptType);
 
   const target = Math.round(amt * 1e8);
-  ins.sort((a, b) => b.amount - a.amount);
+  workingIns.sort((a, b) => b.amount - a.amount);
   let total = 0;
   const selectedIns = [];
-  for (const u of ins) {
+  
+  // MODIFICATION: Sélection intelligente des UTXOs
+  for (const u of workingIns) {
     selectedIns.push(u);
     total += Math.round(u.amount * 1e8);
-    if (total >= target) break;
+    
+    // Pour les transactions normales, arrêter dès qu'on a assez
+    if (!isConsolidation) {
+      const estimatedSize = estimateTxSize(sendScriptType, selectedIns.length, 2, destScriptType);
+      const feeRate = DYNAMIC_FEE_RATE || MIN_FEE_RATE;
+      const estimatedFees = Math.max(Math.round(estimatedSize * (feeRate * 1e8) / 1000), Math.round(MIN_CONSOLIDATION_FEE * 1e8));
+      
+      if (total >= target + estimatedFees + getDustThreshold('p2wpkh')) {
+        break;
+      }
+    }
   }
 
   const txSize = estimateTxSize(sendScriptType, selectedIns.length, 1, destScriptType);
   const feeRate = DYNAMIC_FEE_RATE || MIN_FEE_RATE;
   const inputFee = Math.max(Math.round(txSize * (feeRate * 1e8) / 1000), Math.round(MIN_CONSOLIDATION_FEE * 1e8));
 
-  console.log('Estimated size:', txSize, 'vbytes, Fee:', inputFee / 1e8, 'NITO');
+  console.log('Estimated size:', txSize, 'vbytes, Fee:', inputFee / 1e8, 'NITO, Selected UTXOs:', selectedIns.length);
 
   const fees = inputFee;
   const change = total - target - fees;
@@ -490,34 +542,50 @@ async function signTx(to, amt) {
   return hex;
 }
 
-async function signTxWithPSBT(to, amt) {
+async function signTxWithPSBT(to, amt, isConsolidation = false) {
   updateLastActionTime();
   if (!walletAddress || !walletKeyPair || !walletPublicKey) throw Error(i18next.t('errors.import_first'));
 
-  console.log('Starting transaction preparation for:', to, 'Amount:', amt);
+  console.log('Starting transaction preparation for:', to, 'Amount:', amt, 'Consolidation:', isConsolidation);
 
   const ins = await utxos(walletAddress);
   if (!ins.length) throw new Error(i18next.t('errors.no_utxo'));
+
+  // MODIFICATION: Filtrer les UTXOs avec OP_RETURN pour les transactions normales
+  const workingIns = isConsolidation ? ins : await filterOpReturnUtxos(ins);
+  if (!workingIns.length) throw new Error('Aucun UTXO disponible (tous contiennent des OP_RETURN, veuillez consolider les UTXOs)');
 
   const sendScriptType = getAddressType(walletAddress);
   const destScriptType = getAddressType(to);
   console.log('Script type - sender:', sendScriptType, 'destination:', destScriptType);
 
   const target = Math.round(amt * 1e8);
-  ins.sort((a, b) => b.amount - a.amount);
+  workingIns.sort((a, b) => b.amount - a.amount);
   let total = 0;
   const selectedIns = [];
-  for (const u of ins) {
+  
+  // MODIFICATION: Sélection intelligente des UTXOs
+  for (const u of workingIns) {
     selectedIns.push(u);
     total += Math.round(u.amount * 1e8);
-    if (total >= target) break;
+    
+    // Pour les transactions normales, arrêter dès qu'on a assez
+    if (!isConsolidation) {
+      const estimatedSize = estimateTxSize(sendScriptType, selectedIns.length, 2, destScriptType);
+      const feeRate = DYNAMIC_FEE_RATE || MIN_FEE_RATE;
+      const estimatedFees = Math.max(Math.round(estimatedSize * (feeRate * 1e8) / 1000), Math.round(MIN_CONSOLIDATION_FEE * 1e8));
+      
+      if (total >= target + estimatedFees + getDustThreshold('p2wpkh')) {
+        break;
+      }
+    }
   }
 
   const txSize = estimateTxSize(sendScriptType, selectedIns.length, 1, destScriptType);
   const feeRate = DYNAMIC_FEE_RATE || MIN_FEE_RATE;
   const inputFee = Math.max(Math.round(txSize * (feeRate * 1e8) / 1000), Math.round(MIN_CONSOLIDATION_FEE * 1e8));
 
-  console.log('Estimated size:', txSize, 'vbytes, Fee:', inputFee / 1e8, 'NITO');
+  console.log('Estimated size:', txSize, 'vbytes, Fee:', inputFee / 1e8, 'NITO, Selected UTXOs:', selectedIns.length);
 
   const fees = inputFee;
   const change = total - target - fees;
@@ -699,10 +767,11 @@ async function consolidateUtxos() {
     await new Promise(resolve => setTimeout(resolve, 500));
 
     let hex;
+    // MODIFICATION: Passer isConsolidation = true
     if (sourceType === 'bech32' && destScriptType === 'p2wpkh') {
-      hex = await signTx(to, target / 1e8);
+      hex = await signTx(to, target / 1e8, true);
     } else {
-      hex = await signTxWithPSBT(to, target / 1e8);
+      hex = await signTxWithPSBT(to, target / 1e8, true);
     }
 
     console.log('Consolidation hex:', hex, 'TXID:', bitcoin.Transaction.fromHex(hex).getId());
@@ -715,7 +784,7 @@ async function consolidateUtxos() {
     console.log('Consolidation successful, TXID:', txid);
     setTimeout(() => $('refreshBalanceButton').click(), 3000);
   } catch (e) {
-    alert(i18next.t('errors.consolidation_error', { message: e.message }));
+  alert(i18next.t('errors.consolidation_error', { message: e.message }));
     console.error('Consolidation error:', e);
   }
 }
@@ -802,12 +871,16 @@ function clearSensitiveData() {
 }
 
 window.copyToClipboard = copyToClipboard;
+window.consolidateUtxos = consolidateUtxos;
 
 const $ = id => document.getElementById(id);
 
 window.addEventListener('load', async () => {
+
   console.log('Loading wallet.js');
+
   try {
+
     const requiredIds = [
       'themeToggle', 'languageSelect', 'generateButton', 'importWalletButton', 'refreshBalanceButton',
       'prepareTxButton', 'broadcastTxButton', 'cancelTxButton',
@@ -985,6 +1058,16 @@ window.addEventListener('load', async () => {
         $('walletBalance').textContent = totalBalance.toFixed(8);
         console.log('Wallet imported:', addresses);
 
+        // Exposition variables pour messagerie
+        window.walletKeyPair = walletKeyPair;
+        window.walletPublicKey = walletPublicKey;
+        window.bech32Address = bech32Address;
+        window.rpc = rpc;
+        console.log("✅ Variables messagerie exposées:", bech32Address);
+
+        setTimeout(() => {
+        }, 200);
+
         $('privateKeyWIF').classList.add('blurred-input');
 
         const revealWifInput = $('revealWifInput');
@@ -1020,11 +1103,22 @@ window.addEventListener('load', async () => {
           consolidateButton.onclick = () => consolidateUtxos();
           consolidateButtonInjected = true;
           console.log('Consolidate button injected');
+
+        setTimeout(() => {
+        }, 500);
         } else {
           const existingButton = $('consolidateButton');
           existingButton.textContent = i18next.t('send_section.consolidate_button');
           existingButton.onclick = () => consolidateUtxos();
           console.log('Consolidate button already present, event attached');
+
+        // Forcer l'exposition des variables globales pour la messagerie
+        setTimeout(() => {
+        }, 100);
+
+        // Forcer l'exposition des variables globales pour la messagerie
+        setTimeout(() => {
+        }, 100);
         }
       } catch (e) {
         alert(i18next.t('errors.import_error', { message: e.message }));
@@ -1087,6 +1181,7 @@ window.addEventListener('load', async () => {
         const sourceType = $('debitAddressType').value;
         const destType = getAddressType(dest);
         let hex;
+        // MODIFICATION: Ne pas passer isConsolidation (défaut false)
         if (sourceType === 'bech32' && destType === 'p2wpkh') {
           walletAddress = bech32Address;
           hex = await signTx(dest, amt);
@@ -1130,4 +1225,5 @@ window.addEventListener('load', async () => {
     alert(i18next.t('errors.node_connection', { message: e.message }));
     console.error('Connection error:', e);
   }
+
 });
