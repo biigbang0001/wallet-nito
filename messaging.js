@@ -240,6 +240,11 @@ class NitoMessaging {
       const txid = await walletData.rpcFunction('sendrawtransaction', [hex]);
 
       console.log('✅ Clé publique publiée, TXID:', txid);
+
+      if (window.showSuccessPopup) {
+        await window.showSuccessPopup(txid);
+      }
+
       return { success: true, txid, publicKey: publicKeyHex };
     } catch (error) {
       console.error('❌ Erreur publication clé publique:', error);
@@ -933,7 +938,7 @@ function setupMessagingInterface() {
     try {
       showLoadingSpinner(true);
       const result = await messaging.publishPublicKey();
-      alert(`✅ Clé publique publiée avec succès !\nTXID: ${result.txid}\nCoût: ${MESSAGING_CONFIG.MESSAGE_FEE} NITO`);
+      console.log('✅ Clé publique publiée avec succès !');
     } catch (error) {
       alert(`❌ Erreur: ${error.message}`);
     } finally {
