@@ -545,6 +545,20 @@ class NitoMessaging {
                 currentUtxo
               );
               txid = await walletData.rpcFunction("sendrawtransaction", [newHex]);
+            } else if (error.message.includes("too-long-mempool-chain") || error.message.includes("too many unconfirmed ancestors")) {
+              console.log(`⚠️ Limite mempool atteinte au chunk ${i + 1}/${chunks.length} - Pause de 60 secondes...`);
+
+              // Attendre que les transactions se confirment
+              await this.delay(60000);
+
+              // Retry avec le même UTXO
+              try {
+                txid = await walletData.rpcFunction("sendrawtransaction", [hex]);
+                console.log(`✅ Retry réussi pour chunk ${i + 1} après pause mempool`);
+              } catch (retryError) {
+                console.log(`❌ Retry échoué pour chunk ${i + 1}, arrêt de l'envoi`);
+                throw new Error(`Limite mempool atteinte - Message partiellement envoyé (${i}/${chunks.length} chunks)`);
+              }
             } else {
               throw error;
             }
@@ -563,7 +577,10 @@ class NitoMessaging {
             }
           }
 
-          if (i < chunks.length - 1) {
+          if ((i + 1) % 20 === 0 && i < chunks.length - 1) {
+            console.log(`⏸️ Pause préventive après ${i + 1} chunks (limite mempool: 25)`);
+            await this.delay(30000); // 30 secondes pour laisser confirmer
+          } else if (i < chunks.length - 1) {
             await this.delay(3000);
           }
         }
