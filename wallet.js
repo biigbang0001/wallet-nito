@@ -185,18 +185,18 @@ async function filterOpReturnUtxos(utxos) {
   for (const utxo of utxos) {
     try {
       const tx = await rpc('getrawtransaction', [utxo.txid, true]);
-      
+
       // ✅ CORRECTION: Vérifier SEULEMENT l'output spécifique de l'UTXO
       const specificOutput = tx.vout[utxo.vout];
       if (!specificOutput) {
         console.warn(`Output ${utxo.vout} non trouvé dans transaction ${utxo.txid}`);
         continue;
       }
-      
-      const hasOpReturn = specificOutput.scriptPubKey && 
-                         specificOutput.scriptPubKey.hex && 
+
+      const hasOpReturn = specificOutput.scriptPubKey &&
+                         specificOutput.scriptPubKey.hex &&
                          specificOutput.scriptPubKey.hex.startsWith('6a');
-      
+
       if (!hasOpReturn) {
         filteredUtxos.push(utxo);
         console.log(`✅ UTXO ${utxo.txid}:${utxo.vout} - Pas d'OP_RETURN sur cet output`);
@@ -474,18 +474,18 @@ async function signTx(to, amt, isConsolidation = false) {
   workingIns.sort((a, b) => b.amount - a.amount);
   let total = 0;
   const selectedIns = [];
-  
+
   // MODIFICATION: Sélection intelligente des UTXOs
   for (const u of workingIns) {
     selectedIns.push(u);
     total += Math.round(u.amount * 1e8);
-    
+
     // Pour les transactions normales, arrêter dès qu'on a assez
     if (!isConsolidation) {
       const estimatedSize = estimateTxSize(sendScriptType, selectedIns.length, 2, destScriptType);
       const feeRate = DYNAMIC_FEE_RATE || MIN_FEE_RATE;
       const estimatedFees = Math.max(Math.round(estimatedSize * (feeRate * 1e8) / 1000), Math.round(MIN_CONSOLIDATION_FEE * 1e8));
-      
+
       if (total >= target + estimatedFees + getDustThreshold('p2wpkh')) {
         break;
       }
@@ -570,19 +570,19 @@ async function signTxWithPSBT(to, amt, isConsolidation = false) {
   workingIns.sort((a, b) => b.amount - a.amount);
   let total = 0;
   const selectedIns = [];
-  
+
   // MODIFICATION: Sélection intelligente des UTXOs
   for (const u of workingIns) {
     selectedIns.push(u);
     total += Math.round(u.amount * 1e8);
 
-    
+
     // Pour les transactions normales, arrêter dès qu'on a assez
     if (!isConsolidation) {
       const estimatedSize = estimateTxSize(sendScriptType, selectedIns.length, 2, destScriptType);
       const feeRate = DYNAMIC_FEE_RATE || MIN_FEE_RATE;
       const estimatedFees = Math.max(Math.round(estimatedSize * (feeRate * 1e8) / 1000), Math.round(MIN_CONSOLIDATION_FEE * 1e8));
-      
+
       if (total >= target + estimatedFees + getDustThreshold('p2wpkh')) {
         break;
       }
@@ -994,8 +994,6 @@ window.addEventListener('load', async () => {
         $('privateKey').classList.add('blurred');
 
         $('generatedAddress').innerHTML = DOMPurify.sanitize(`
-          Legacy: <span id="generatedLegacyAddress">${addresses.legacy}</span> <button class="copy-btn" id="copyGeneratedLegacyAddr">📋</button> (Solde: ${legacyBalance.toFixed(8)} NITO)<br>
-          P2SH: <span id="generatedP2shAddress">${addresses.p2sh}</span> <button class="copy-btn" id="copyGeneratedP2shAddr">📋</button> (Solde: ${p2shBalance.toFixed(8)} NITO)<br>
           Bech32: <span id="generatedBech32Address">${addresses.bech32}</span> <button class="copy-btn" id="copyGeneratedBech32Addr">📋</button> (Solde: ${bech32Balance.toFixed(8)} NITO)
         `);
 
@@ -1066,8 +1064,6 @@ window.addEventListener('load', async () => {
         const bech32Balance = await balance(addresses.bech32);
         const totalBalance = legacyBalance + p2shBalance + bech32Balance;
         $('walletAddress').innerHTML = DOMPurify.sanitize(`
-          Legacy: <span id="legacyAddress">${legacyAddress}</span> <button class="copy-btn" id="copyLegacyAddr">📋</button> (Solde: ${legacyBalance.toFixed(8)} NITO)<br>
-          P2SH: <span id="p2shAddress">${p2shAddress}</span> <button class="copy-btn" id="copyP2shAddr">📋</button> (Solde: ${p2shBalance.toFixed(8)} NITO)<br>
           Bech32: <span id="bech32Address">${addresses.bech32}</span> <button class="copy-btn" id="copyBech32Addr">📋</button> (Solde: ${bech32Balance.toFixed(8)} NITO)
         `);
         $('walletBalance').textContent = totalBalance.toFixed(8);
