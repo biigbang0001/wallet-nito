@@ -3,12 +3,12 @@
   "language_label": "Langue :",
   "languages": {
     "fr": "Français",
-    "en": "Anglais",
-    "de": "Allemand",
-    "es": "Espagnol",
-    "nl": "Néerlandais",
-    "ru": "Russe",
-    "zh": "Chinois"
+    "en": "English",
+    "de": "Deutsch",
+    "es": "Español",
+    "nl": "Nederlands",
+    "ru": "Русский",
+    "zh": "中文"
   },
   "counter": {
     "keys_generated": "🔑 Clés Nito générées :"
@@ -24,7 +24,8 @@
   },
   "import_section": {
     "title": "📥 Importer un wallet",
-    "placeholder": "Clé privée (WIF ou hex)",
+    "placeholder": "Clé privée (WIF/Hex) OU Phrase mnémonique (12/24 mots) OU Clé HD (xprv...)",
+    "passphrase_placeholder": "Phrase de passe HD (optionnel - uniquement pour phrases mnémoniques)",
     "import_button": "📥 Importer",
     "balance": "Solde :",
     "refresh_button": "🔄"
@@ -50,6 +51,9 @@
     "publish_pubkey": "🔑 Publier ma clé publique",
     "publish_info": "Publiez votre clé publique une fois pour permettre aux autres de vous envoyer des messages cryptés. (Si Consolider UTXOs, veuillez republier votre clé publique pour envoyer/recevoir des messages)",
     "write_title": "✍️ Écrire un message",
+    "message": "Message",
+    "from": "De",
+    "content": "Contenu",
     "message_placeholder": "Votre message (max 5000 caractères)",
     "send_button": "📤 Envoyer",
     "clear_button": "🗑️ Effacer",
@@ -69,9 +73,6 @@
     "mark_as_read": "📖 Marquer comme lu",
     "consolidate_messaging": "🔄 Consolider UTXOs messagerie",
     "consolidate_to_delete": "Consolider les UTXOs pour effacer les messages.",
-    "message": "Message",
-    "from": "De",
-    "content": "Contenu",
     "progress": {
       "preparing": "Préparation",
       "sending": "Envoi",
@@ -95,6 +96,11 @@
     "message_error": "Erreur",
     "signature_verified": "✓ Signature vérifiée",
     "noble_ecdh_encryption": "🔐 Noble-ECDH+AES-GCM"
+  },
+  "footer": {
+    "open_source": "Ce projet est open source",
+    "view_code": "Voir le code sur GitHub",
+    "official_site": "Site officiel NITO"
   },
   "popup": {
     "success": {
@@ -136,7 +142,7 @@
     "consolidation_error": "Erreur lors de la consolidation : {message}",
     "invalid_addresses": "Une ou plusieurs adresses générées sont invalides.",
     "generation_error": "Erreur lors de la génération : {message}",
-    "import_empty": "Veuillez entrer une clé privée WIF ou hexadécimale.",
+    "import_empty": "Veuillez entrer une clé privée WIF, hexadécimale, phrase mnémonique ou clé HD.",
     "import_error": "Erreur lors de l'importation : {message}",
     "refresh_error": "Erreur lors de l'actualisation du solde : {message}",
     "invalid_fields": "Remplissez tous les champs avec des valeurs valides.",
