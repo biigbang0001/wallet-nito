@@ -367,8 +367,8 @@
     <button id="generateButton" data-i18n="generate_section.generate_button">🎲 Générer</button>
     <p><span data-i18n="generate_section.private_key_hex">Clé privée (hex) :</span> <span id="privateKeyHex" class="blurred"></span> <button class="copy-btn" id="copyGenHex" data-i18n="generate_section.copy">📋</button> <button class="reveal-btn" id="revealHex" data-i18n="generate_section.reveal">👁️ Révéler</button></p>
     <p><span data-i18n="generate_section.private_key_wif">WIF :</span> <span id="privateKey" class="blurred"></span> <button class="copy-btn" id="copyGenWif" data-i18n="generate_section.copy">📋</button> <button class="reveal-btn" id="revealWif" data-i18n="generate_section.reveal">👁️ Révéler</button></p>
-    <p><span>🔐 xprv HD :</span> <span id="hdMasterKey" class="blurred"></span> <button class="copy-btn" id="copyHdKey">📋</button> <button class="reveal-btn" id="revealHdKey">👁️ Révéler</button></p>
-    <p><span>🎯 mnémonique HD :</span> <span id="mnemonicPhrase" class="blurred"></span> <button class="copy-btn" id="copyMnemonic">📋</button> <button class="reveal-btn" id="revealMnemonic">👁️ Révéler</button></p>
+    <p><span data-i18n="generate_section.hd_master_key">🔐 xprv HD :</span> <span id="hdMasterKey" class="blurred"></span> <button class="copy-btn" id="copyHdKey" data-i18n="generate_section.copy">📋</button> <button class="reveal-btn" id="revealHdKey" data-i18n="generate_section.reveal">👁️ Révéler</button></p>
+    <p><span data-i18n="generate_section.mnemonic_phrase">🎯 mnémonique HD :</span> <span id="mnemonicPhrase" class="blurred"></span> <button class="copy-btn" id="copyMnemonic" data-i18n="generate_section.copy">📋</button> <button class="reveal-btn" id="revealMnemonic" data-i18n="generate_section.reveal">👁️ Révéler</button></p>
     <p><span id="generatedAddress"></span></p>
     <p class="warning" data-i18n="generate_section.warning"><span id="inactivityTimer">[10:00]</span> ⚠️ Sauvegardez la clé privée immédiatement ! Elle sera effacée après 10 minutes d'inactivité ou après un rechargement de la page.</p>
   </div>
@@ -376,12 +376,9 @@
   <div class="section">
     <h2 data-i18n="import_section.title">📥 Importer un wallet</h2>
     <div>
-      <textarea id="privateKeyWIF" placeholder="Clé privée (WIF/Hex) OU Phrase mnémonique (12/24 mots) OU Clé HD (xprv...)"
+      <textarea id="privateKeyWIF" placeholder="WIF/Hex/mnémonique HD/XPRV HD"
                 style="width: 100%; height: 80px; resize: vertical;"></textarea>
       <button class="reveal-btn" id="revealWifInput" data-i18n="generate_section.reveal">👁️ Révéler</button>
-    </div>
-    <div style="margin-top: 10px;">
-      <input id="hdPassphrase" type="password" placeholder="Phrase de passe HD (optionnel - uniquement pour phrases mnémoniques)" style="width: 100%;"/>
     </div>
     <button id="importWalletButton" data-i18n="import_section.import_button">📥 Importer</button>
     <p><span id="walletAddress"></span></p>
