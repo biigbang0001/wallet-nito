@@ -367,6 +367,8 @@
     <button id="generateButton" data-i18n="generate_section.generate_button">🎲 Générer</button>
     <p><span data-i18n="generate_section.private_key_hex">Clé privée (hex) :</span> <span id="privateKeyHex" class="blurred"></span> <button class="copy-btn" id="copyGenHex" data-i18n="generate_section.copy">📋</button> <button class="reveal-btn" id="revealHex" data-i18n="generate_section.reveal">👁️ Révéler</button></p>
     <p><span data-i18n="generate_section.private_key_wif">WIF :</span> <span id="privateKey" class="blurred"></span> <button class="copy-btn" id="copyGenWif" data-i18n="generate_section.copy">📋</button> <button class="reveal-btn" id="revealWif" data-i18n="generate_section.reveal">👁️ Révéler</button></p>
+    <p><span>🔐 (xprv) :</span> <span id="hdMasterKey" class="blurred"></span> <button class="copy-btn" id="copyHdKey">📋</button> <button class="reveal-btn" id="revealHdKey">👁️ Révéler</button></p>
+    <p><span>🎯 mnémonique :</span> <span id="mnemonicPhrase" class="blurred"></span> <button class="copy-btn" id="copyMnemonic">📋</button> <button class="reveal-btn" id="revealMnemonic">👁️ Révéler</button></p>
     <p><span id="generatedAddress"></span></p>
     <p class="warning" data-i18n="generate_section.warning"><span id="inactivityTimer">[10:00]</span> ⚠️ Sauvegardez la clé privée immédiatement ! Elle sera effacée après 10 minutes d'inactivité ou après un rechargement de la page.</p>
   </div>
@@ -374,8 +376,12 @@
   <div class="section">
     <h2 data-i18n="import_section.title">📥 Importer un wallet</h2>
     <div>
-      <input id="privateKeyWIF" placeholder="Clé privée (WIF ou hex)" data-i18n="[placeholder]import_section.placeholder"/>
+      <textarea id="privateKeyWIF" placeholder="Clé privée (WIF/Hex) OU Phrase mnémonique (12/24 mots) OU Clé HD (xprv...)"
+                style="width: 100%; height: 80px; resize: vertical;"></textarea>
       <button class="reveal-btn" id="revealWifInput" data-i18n="generate_section.reveal">👁️ Révéler</button>
+    </div>
+    <div style="margin-top: 10px;">
+      <input id="hdPassphrase" type="password" placeholder="Phrase de passe HD (optionnel - uniquement pour phrases mnémoniques)" style="width: 100%;"/>
     </div>
     <button id="importWalletButton" data-i18n="import_section.import_button">📥 Importer</button>
     <p><span id="walletAddress"></span></p>
@@ -427,9 +433,9 @@
 
     <!-- Formulaire d'envoi (masqué par défaut) -->
     <div id="sendMessageForm" class="send-form">
-      <h4>📧 Destinataire du message</h4>
+      <h4 data-i18n="messaging_recipient_title">📧 Destinataire du message</h4>
       <input id="recipientAddress" placeholder="Adresse bech32 du destinataire (nito1...)" data-i18n="[placeholder]encrypted_messaging.recipient_placeholder"/>
-      <p id="sendMessageCost" class="char-counter">Coût estimé: 0.0001 NITO (1 transaction)</p>
+      <p id="sendMessageCost" class="char-counter" data-i18n="messaging_estimated_cost">Coût estimé: 0.0001 NITO (1 transaction)</p>
       <div style="margin-top: 10px;">
         <button id="confirmSendButton" data-i18n="encrypted_messaging.validate_button">✅ Confirmer l'envoi</button>
         <button id="cancelSendButton" data-i18n="encrypted_messaging.cancel_button">❌ Annuler</button>
@@ -533,5 +539,45 @@
   </script>
 
   <script type="module" src="./wallet.js"></script>
+
+  <footer style="
+    text-align: center;
+    margin-top: 40px;
+    padding: 20px;
+    border-top: 1px solid #e0e0e0;
+    font-size: 14px;
+    color: #666;
+    background: linear-gradient(to bottom, rgba(230, 240, 250, 0.5), rgba(179, 212, 252, 0.5));
+  ">
+    <div style="margin-bottom: 10px;">
+      🔓 <span data-i18n="footer.open_source">Ce projet est open source</span> -
+      <a href="https://github.com/biigbang0001/wallet-nito" target="_blank" style="color: #1e3a8a; text-decoration: none;">
+        <span data-i18n="footer.view_code">Voir le code sur GitHub</span> 📖
+      </a>
+    </div>
+    <div>
+      🌐 <span data-i18n="footer.official_site">Site officiel NITO</span> -
+      <a href="https://nito.network/" target="_blank" style="color: #1e3a8a; text-decoration: none;">
+        nito.network 🚀
+      </a>
+    </div>
+  </footer>
+
+  <!-- Styles pour le mode sombre du footer -->
+  <style>
+    body.dark-mode footer {
+      background: linear-gradient(to bottom, rgba(44, 62, 80, 0.5), rgba(26, 37, 47, 0.5)) !important;
+      border-top: 1px solid #555 !important;
+      color: #bbb !important;
+    }
+
+    body.dark-mode footer a {
+      color: #64b5f6 !important;
+    }
+
+    footer a:hover {
+      text-decoration: underline !important;
+    }
+  </style>
 </body>
 </html>
