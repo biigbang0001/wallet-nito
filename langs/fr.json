@@ -16,8 +16,10 @@
   "generate_section": {
     "title": "🎯 Génération de clé privée Nito",
     "generate_button": "🎲 Générer",
-    "private_key_hex": "Clé privée (hex) :",
+    "private_key_hex": "HEX :",
     "private_key_wif": "WIF :",
+    "hd_master_key": "🔐 xprv HD :",
+    "mnemonic_phrase": "🎯 mnémonique HD :",
     "copy": "📋",
     "reveal": "👁️ Révéler",
     "warning": "<span id=\"inactivityTimer\">[10:00]</span> ⚠️ Sauvegardez la clé privée immédiatement ! Elle sera effacée après 10 minutes d'inactivité ou après un rechargement de la page."
