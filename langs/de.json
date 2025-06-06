@@ -16,8 +16,10 @@
   "generate_section": {
     "title": "🎯 Generierung eines privaten Nito-Schlüssels",
     "generate_button": "🎲 Generieren",
-    "private_key_hex": "Privater Schlüssel (hex):",
-    "private_key_wif": "WIF:",
+    "private_key_hex": "HEX :",
+    "private_key_wif": "WIF :",
+    "hd_master_key": "🔐 xprv HD :",
+    "mnemonic_phrase": "🎯 mnémonique HD :",
     "copy": "📋",
     "reveal": "👁️ Anzeigen",
     "warning": "<span id=\"inactivityTimer\">[10:00]</span> ⚠️ Speichern Sie den privaten Schlüssel sofort! Er wird nach 10 Minuten Inaktivität oder nach einem Neuladen der Seite gelöscht."
