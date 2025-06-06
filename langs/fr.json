@@ -176,12 +176,30 @@
     "public_key_required": "Clé publique du destinataire introuvable. Le destinataire doit d'abord publier sa clé publique.",
     "consolidation_completed": "✅ Consolidation terminée\n\n⚠️ N'oubliez pas de republier votre clé publique !",
     "republish_public_key": "⚠️ Consolidation terminée ! Vous devez republier votre clé publique pour pouvoir recevoir de nouveaux messages.",
-    "utxo_opreturn_consolidate": "Tous vos UTXOs contiennent des données OP_RETURN (messages/clés). Utilisez le bouton '🔄 Consolider UTXOs' pour les nettoyer et pouvoir faire des transactions normales."
+    "utxo_opreturn_consolidate": "Aucun UTXO disponible (tous contiennent des OP_RETURN, veuillez consolider les UTXOs)",
+    "consolidation_bech32_only": "Consolidation disponible uniquement pour Bech32",
+    "mnemonic_generation_error": "Erreur lors de la génération de la phrase mnémonique",
+    "invalid_mnemonic": "Phrase mnémonique invalide",
+    "hd_import_error": "Erreur d'importation HD: {message}"
   },
   "copied": "Copié !",
   "success_messages": {
     "public_key_published": "✅ Clé publique publiée avec succès !\nTXID: {txid}\nCoût: {cost} NITO",
     "message_sent_full": "✅ Message envoyé avec succès !\nID: {messageId}\nTransactions: {chunks}/{totalChunks}\nCoût: {cost} NITO\n\n🔐 Chiffrement Noble ECDH + AES-GCM",
     "message_sent_partial": "⚠️ Message partiellement envoyé\nID: {messageId}\nTransactions: {chunks}/{totalChunks}\nCoût: {cost} NITO\n\nCertains chunks n'ont pas pu être envoyés. Réessayez plus tard."
-  }
+  },
+  "messaging_recipient_title": "📧 Destinataire du message",
+  "messaging_estimated_cost": "Coût estimé: 0.0001 NITO (1 transaction)",
+  "progress_indicators": {
+    "preparing": "Préparation",
+    "sending": "Envoi",
+    "analyzing_messages": "Analyse des messages"
+  },
+  "consolidation_progress": "Consolidation de {count} UTXOs vers {address}",
+  "consolidation_multiple_batches": "Sera fait en {count} transactions automatiques",
+  "consolidation_single_transaction": "Une seule transaction nécessaire",
+  "consolidation_final_completed": "✅ Consolidation terminée !\n{transactions} transaction(s) effectuée(s)\nUTXOs finaux: {utxos}",
+  "consolidation_single_utxo_completed": "✅ Consolidation terminée - Un seul UTXO restant !",
+  "consolidation_stopped": "⚠️ Consolidation arrêtée\nUTXOs restants: {utxos}",
+  "consolidation_already_done": "✅ Consolidation déjà effectuée !"
 }
