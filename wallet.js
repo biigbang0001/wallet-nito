@@ -3,7 +3,15 @@ import * as tinysecp from 'https://esm.sh/@bitcoin-js/tiny-secp256k1-asmjs@2.2.3
 import ECPairFactory from 'https://esm.sh/ecpair@3.0.0';
 import { Buffer } from 'https://esm.sh/buffer@6.0.3';
 import "./messaging.js";
+import * as bip39 from 'https://esm.sh/bip39@3.1.0';
+import bip32Factory from 'https://esm.sh/bip32@4.0.0';
 window.Buffer = Buffer;
+
+const bip32 = bip32Factory(tinysecp);
+
+// === Extension HD ===
+let hdWallet = null;
+let currentMnemonic = null;
 
 const ECPair = ECPairFactory(tinysecp);
 
@@ -26,6 +34,7 @@ const DUST_AMOUNT = {
   p2sh: 540
 };
 const MIN_CONSOLIDATION_FEE = 0.00005;
+const MAX_UTXOS_PER_BATCH = 50; // Limite d'UTXOs par transaction de consolidation
 
 let walletAddress = '';
 let legacyAddress = '';
@@ -144,41 +153,6 @@ async function updateCounterDisplay() {
   }
 }
 
-async function getExplorerUrl(txid) {
-  const primaryUrl = `https://explorer.nito.network/tx/${txid}`;
-  const fallbackUrl = `https://nitoexplorer.org/tx/${txid}`;
-  try {
-    const res = await fetch('https://explorer.nito.network', { method: 'HEAD', mode: 'cors' });
-    if (res.ok) return primaryUrl;
-    console.log('Primary explorer unavailable, using fallback');
-    return fallbackUrl;
-  } catch (e) {
-    console.error('Error checking explorer:', e);
-    return fallbackUrl;
-  }
-}
-
-async function checkTransactionConfirmation(txid) {
-  const primaryApi = `https://explorer.nito.network/ext/gettx/${txid}`;
-  const fallbackApi = `https://nitoexplorer.org/ext/gettx/${txid}`;
-  try {
-    const res = await fetch(primaryApi);
-    if (res.ok) {
-      const data = await res.json();
-      return data.confirmations >= 1;
-    }
-    const fallbackRes = await fetch(fallbackApi);
-    if (fallbackRes.ok) {
-      const fallbackData = await fallbackRes.json();
-      return fallbackData.confirmations >= 1;
-    }
-    return false;
-  } catch (e) {
-    console.error('Error checking confirmation via API:', e);
-    return false;
-  }
-}
-
 // NOUVELLE FONCTION: Filtrer les UTXOs avec OP_RETURN
 async function filterOpReturnUtxos(utxos) {
   const filteredUtxos = [];
@@ -259,7 +233,18 @@ async function showSuccessPopup(txid) {
   closeButton.onclick = () => document.body.removeChild(popup);
 }
 
-  window.showSuccessPopup = showSuccessPopup;
+window.showSuccessPopup = showSuccessPopup;
+
+// Fonctions pour le spinner de chargement
+function showLoadingSpinner() {
+  const spinner = document.getElementById('loadingSpinner');
+  if (spinner) spinner.style.display = 'block';
+}
+
+function hideLoadingSpinner() {
+  const spinner = document.getElementById('loadingSpinner');
+  if (spinner) spinner.style.display = 'none';
+}
 
 async function initNetworkParams() {
   try {
@@ -303,6 +288,70 @@ async function validateAddress(address) {
   } catch (e) {
     console.error('Error validating address:', e);
     return false;
+  }
+}
+
+/**
+ * Génère une phrase mnémonique HD
+ */
+function generateHDMnemonic(wordCount = 12) {
+  try {
+    const entropyBits = wordCount === 24 ? 256 : 128;
+    const entropyBytes = entropyBits / 8;
+    const entropy = window.crypto.getRandomValues(new Uint8Array(entropyBytes));
+    const entropyHex = Array.from(entropy).map(x => x.toString(16).padStart(2, '0')).join('');
+    return bip39.entropyToMnemonic(entropyHex);
+  } catch (e) {
+    console.error('Erreur génération mnémonique:', e);
+    throw new Error(i18next.t('errors.mnemonic_generation_error'));
+  }
+}
+
+/**
+ * Importe un wallet HD depuis mnémonique ou xprv
+ */
+function importHDWallet(seedOrXprv, passphrase = '') {
+  try {
+    let seed;
+
+    if (seedOrXprv.startsWith('xprv')) {
+      // Clé maître directe
+      hdWallet = bip32.fromBase58(seedOrXprv);
+      currentMnemonic = null;
+    } else {
+      // Phrase mnémonique
+      const mnemonic = seedOrXprv.trim();
+      if (!bip39.validateMnemonic(mnemonic)) {
+         throw new Error(i18next.t('errors.invalid_mnemonic'));
+      }
+
+      seed = bip39.mnemonicToSeedSync(mnemonic, passphrase);
+      hdWallet = bip32.fromSeed(seed);
+      currentMnemonic = mnemonic;
+    }
+
+    // Générer la première adresse bech32 (comme votre logique actuelle)
+    const bech32Node = hdWallet.derivePath("m/84'/0'/0'/0/0");
+    const pubkey = Buffer.from(bech32Node.publicKey);
+    const keyPair = ECPair.fromPrivateKey(bech32Node.privateKey, { network: NITO_NETWORK });
+
+    const p2pkh = bitcoin.payments.p2pkh({ pubkey: pubkey, network: NITO_NETWORK });
+    const p2wpkh = bitcoin.payments.p2wpkh({ pubkey: pubkey, network: NITO_NETWORK });
+    const p2sh = bitcoin.payments.p2sh({ redeem: p2wpkh, network: NITO_NETWORK });
+
+    return {
+      legacy: p2pkh.address,
+      p2sh: p2sh.address,
+      bech32: p2wpkh.address,
+      keyPair: keyPair,
+      publicKey: pubkey,
+      hdMasterKey: hdWallet.toBase58(),
+      mnemonic: currentMnemonic
+    };
+
+  } catch (e) {
+    console.error('Erreur importation HD:', e);
+    throw new Error(i18next.t('errors.hd_import_error', { message: e.message }));
   }
 }
 
@@ -372,7 +421,7 @@ async function utxos(addr) {
       };
     });
   } catch (e) {
-console.error('Error fetching UTXO:', e);
+    console.error('Error fetching UTXO:', e);
     throw e;
   }
 }
@@ -451,6 +500,80 @@ async function transferToP2SH(amt) {
   return await signTxWithPSBT(p2shAddress, amt);
 }
 
+// Fonction spécialisée pour la consolidation par lots
+async function signTxBatch(to, amt, specificUtxos, isConsolidation = true) {
+  updateLastActionTime();
+  if (!walletAddress || !walletKeyPair || !walletPublicKey) throw Error(i18next.t('errors.import_first'));
+
+  console.log('Starting batch transaction preparation for:', to, 'Amount:', amt, 'UTXOs:', specificUtxos.length);
+
+  const sendScriptType = getAddressType(walletAddress);
+  if (sendScriptType !== 'p2wpkh') throw new Error(i18next.t('errors.only_bech32_supported'));
+
+  const destScriptType = getAddressType(to);
+  console.log('Script type - sender:', sendScriptType, 'destination:', destScriptType);
+
+  const target = Math.round(amt * 1e8);
+  let total = 0;
+
+  // Utiliser les UTXOs spécifiques fournis
+  const selectedIns = specificUtxos;
+  for (const u of selectedIns) {
+    total += Math.round(u.amount * 1e8);
+  }
+
+  // Calcul des frais basé sur les UTXOs réellement utilisés
+  const feeRate = DYNAMIC_FEE_RATE || MIN_FEE_RATE;
+  const fees = Math.max(
+    Math.round((selectedIns.length * 150 + 50) * (feeRate * 1e8) / 1000),
+    Math.round(MIN_CONSOLIDATION_FEE * 1e8)
+  );
+
+  console.log('Batch - Selected UTXOs:', selectedIns.length, 'Total:', total / 1e8, 'Target:', target / 1e8, 'Fees:', fees / 1e8);
+
+  const change = total - target - fees;
+  if (change < 0) throw new Error(i18next.t('errors.insufficient_funds'));
+
+  const psbt = new bitcoin.Psbt({ network: NITO_NETWORK });
+  psbt.setVersion(2);
+
+  for (const utxo of selectedIns) {
+    const scriptBuffer = Buffer.from(utxo.scriptPubKey, 'hex');
+    psbt.addInput({
+      hash: utxo.txid,
+      index: utxo.vout,
+      witnessUtxo: { script: scriptBuffer, value: Math.round(utxo.amount * 1e8) }
+    });
+  }
+
+  if (target < getDustThreshold(destScriptType)) {
+    throw new Error(i18next.t('errors.low_amount', { amount: target, minimum: getDustThreshold(destScriptType) }));
+  }
+  psbt.addOutput({ address: to, value: target });
+
+  if (change > getDustThreshold('p2wpkh')) {
+    psbt.addOutput({ address: walletAddress, value: change });
+  }
+
+  const signer = {
+    network: walletKeyPair.network,
+    privateKey: walletKeyPair.privateKey,
+    publicKey: walletPublicKey,
+    sign: (hash) => Buffer.from(walletKeyPair.sign(hash))
+  };
+
+  for (let i = 0; i < selectedIns.length; i++) {
+    psbt.signInput(i, signer, [bitcoin.Transaction.SIGHASH_ALL]);
+  }
+
+  psbt.finalizeAllInputs();
+  const tx = psbt.extractTransaction();
+  const hex = tx.toHex();
+
+  console.log('Batch transaction hex:', hex, 'TXID:', tx.getId());
+  return hex;
+}
+
 async function signTx(to, amt, isConsolidation = false) {
   updateLastActionTime();
   if (!walletAddress || !walletKeyPair || !walletPublicKey) throw Error(i18next.t('errors.import_first'));
@@ -462,7 +585,7 @@ async function signTx(to, amt, isConsolidation = false) {
 
   // MODIFICATION: Filtrer les UTXOs avec OP_RETURN pour les transactions normales
   const workingIns = isConsolidation ? ins : await filterOpReturnUtxos(ins);
-  if (!workingIns.length) throw new Error('Aucun UTXO disponible (tous contiennent des OP_RETURN, veuillez consolider les UTXOs)');
+  if (!workingIns.length) throw new Error(i18next.t('errors.utxo_opreturn_consolidate'));
 
   const sendScriptType = getAddressType(walletAddress);
   if (sendScriptType !== 'p2wpkh') throw new Error(i18next.t('errors.only_bech32_supported'));
@@ -492,18 +615,13 @@ async function signTx(to, amt, isConsolidation = false) {
     }
 
     // Pour consolidation, utiliser tous les UTXOs
-
   }
 
   const txSize = estimateTxSize(sendScriptType, selectedIns.length, 1, destScriptType);
   const feeRate = DYNAMIC_FEE_RATE || MIN_FEE_RATE;
-  const inputFee = Math.max(Math.round((ins.length * 150 + 50) * (feeRate * 1e8) / 1000), Math.round(MIN_CONSOLIDATION_FEE * 1e8));
-
+  const inputFee = Math.max(Math.round((selectedIns.length * 150 + 50) * (feeRate * 1e8) / 1000), Math.round(MIN_CONSOLIDATION_FEE * 1e8));
 
   console.log('Estimated size:', txSize, 'vbytes, Fee:', inputFee / 1e8, 'NITO, Selected UTXOs:', selectedIns.length);
-
-  console.log('Consolidation - UTXOs:', ins.length, 'Estimated size:', txSize, 'vbytes, Fee:', inputFee / 1e8, 'NITO');
-
 
   const fees = inputFee;
   const change = total - target - fees;
@@ -576,7 +694,6 @@ async function signTxWithPSBT(to, amt, isConsolidation = false) {
     selectedIns.push(u);
     total += Math.round(u.amount * 1e8);
 
-
     // Pour les transactions normales, arrêter dès qu'on a assez
     if (!isConsolidation) {
       const estimatedSize = estimateTxSize(sendScriptType, selectedIns.length, 2, destScriptType);
@@ -589,18 +706,13 @@ async function signTxWithPSBT(to, amt, isConsolidation = false) {
     }
 
     // Pour consolidation, utiliser tous les UTXOs
-
   }
 
   const txSize = estimateTxSize(sendScriptType, selectedIns.length, 1, destScriptType);
   const feeRate = DYNAMIC_FEE_RATE || MIN_FEE_RATE;
-  const inputFee = Math.max(Math.round((ins.length * 150 + 50) * (feeRate * 1e8) / 1000), Math.round(MIN_CONSOLIDATION_FEE * 1e8));
-
+  const inputFee = Math.max(Math.round((selectedIns.length * 150 + 50) * (feeRate * 1e8) / 1000), Math.round(MIN_CONSOLIDATION_FEE * 1e8));
 
   console.log('Estimated size:', txSize, 'vbytes, Fee:', inputFee / 1e8, 'NITO, Selected UTXOs:', selectedIns.length);
-
-  console.log('Consolidation - UTXOs:', ins.length, 'Estimated size:', txSize, 'vbytes, Fee:', inputFee / 1e8, 'NITO');
-
 
   const fees = inputFee;
   const change = total - target - fees;
@@ -677,29 +789,84 @@ async function signTxWithPSBT(to, amt, isConsolidation = false) {
   return hex;
 }
 
+async function getExplorerUrl(txid) {
+  const primaryUrl = `https://explorer.nito.network/tx/${txid}`;
+  const fallbackUrl = `https://nitoexplorer.org/tx/${txid}`;
+  try {
+    const res = await fetch('https://explorer.nito.network', { method: 'HEAD', mode: 'cors' });
+    if (res.ok) return primaryUrl;
+    console.log('Primary explorer unavailable, using fallback');
+    return fallbackUrl;
+  } catch (e) {
+    console.error('Error checking explorer:', e);
+    return fallbackUrl;
+  }
+}
+
+async function checkTransactionConfirmation(txid) {
+  const primaryApi = `https://explorer.nito.network/ext/gettx/${txid}`;
+  const fallbackApi = `https://nitoexplorer.org/ext/gettx/${txid}`;
+  try {
+    const res = await fetch(primaryApi);
+    if (res.ok) {
+      const data = await res.json();
+      return data.confirmations >= 1;
+    }
+    const fallbackRes = await fetch(fallbackApi);
+    if (fallbackRes.ok) {
+      const fallbackData = await fallbackRes.json();
+      return fallbackData.confirmations >= 1;
+    }
+    return false;
+  } catch (e) {
+    console.error('Error checking confirmation via API:', e);
+    return false;
+  }
+}
+
+window.showSuccessPopup = showSuccessPopup;
+
 async function consolidateUtxos() {
   updateLastActionTime();
   const body = document.body;
   console.log('Consolidate UTXOs button clicked');
+
   try {
-    if (!walletAddress || !walletKeyPair || !walletPublicKey || !legacyAddress || !p2shAddress || !bech32Address) {
+    if (!walletAddress || !walletKeyPair || !walletPublicKey || !bech32Address) {
       alert(i18next.t('errors.import_first'));
       console.error('Wallet or addresses not initialized');
       return;
     }
 
     const sourceType = $('debitAddressType').value;
-    if (!['p2sh', 'bech32'].includes(sourceType)) {
-      alert(i18next.t('errors.consolidation_invalid_type'));
+    if (!['bech32'].includes(sourceType)) {
+      alert(i18next.t('errors.consolidation_bech32_only'));
       console.error('Invalid source type:', sourceType);
       return;
     }
 
-    const to = sourceType === 'p2sh' ? p2shAddress : bech32Address;
-    const sourceAddress = to;
-    console.log('Consolidating to:', to);
+    const sourceAddress = bech32Address;
+    console.log('Consolidating UTXOs for:', sourceAddress);
 
+    showLoadingSpinner();
+
+    // Récupérer tous les UTXOs initiaux
+    const initialUtxos = await utxos(sourceAddress);
+    if (initialUtxos.length < 2) {
+      hideLoadingSpinner();
+      alert(i18next.t('errors.consolidation_low_utxo'));
+      console.log('Less than 2 UTXOs found:', initialUtxos.length);
+      return;
+    }
+
+    console.log('Initial UTXOs to consolidate:', initialUtxos.length);
+
+    // Calculer le nombre de batches nécessaires
+    const totalBatches = Math.ceil(initialUtxos.length / MAX_UTXOS_PER_BATCH);
+
+    // Demander confirmation
     const confirm = await new Promise(resolve => {
+      hideLoadingSpinner();
       const popup = document.createElement('div');
       popup.className = 'popup';
       popup.style.position = 'fixed';
@@ -712,21 +879,15 @@ async function consolidateUtxos() {
       popup.style.zIndex = '1000';
       popup.style.color = body.classList.contains('dark-mode') ? '#e0e0e0' : '#1e3a8a';
       popup.innerHTML = DOMPurify.sanitize(`
-        <p>${i18next.t('popup.consolidation.confirm_message', { address: to })}</p>
-        <button id="confirmConsolidate">${i18next.t('popup.consolidation.confirm_button')}</button>
-        <button id="cancelConsolidate">${i18next.t('popup.consolidation.cancel_button')}</button>
+        <p>${i18next.t('consolidation_progress', { count: initialUtxos.length, address: sourceAddress })}</p>
+        <p>${totalBatches > 1 ? i18next.t('consolidation_multiple_batches', { count: totalBatches }) : i18next.t('consolidation_single_transaction')}</p>
+        <button id="confirmConsolidate">Confirmer</button>
+        <button id="cancelConsolidate">Annuler</button>
       `);
       document.body.appendChild(popup);
 
       const confirmButton = document.getElementById('confirmConsolidate');
       const cancelButton = document.getElementById('cancelConsolidate');
-
-      if (!confirmButton || !cancelButton) {
-        console.error('Popup buttons not found');
-        document.body.removeChild(popup);
-        resolve(false);
-        return;
-      }
 
       confirmButton.onclick = () => {
         document.body.removeChild(popup);
@@ -743,63 +904,141 @@ async function consolidateUtxos() {
       return;
     }
 
-    console.log('Fetching UTXOs for:', sourceAddress);
-    await new Promise(resolve => setTimeout(resolve, 1000));
-    const ins = await utxos(sourceAddress);
-    if (ins.length < 2) {
-      alert(i18next.t('errors.consolidation_low_utxo'));
-      console.log('Less than 2 UTXOs found:', ins.length);
-      return;
-    }
+    showLoadingSpinner();
 
-    console.log('Number of UTXOs to consolidate:', ins.length);
-
-    const sendScriptType = getAddressType(sourceAddress);
-    const destScriptType = getAddressType(to);
-
-    let total = 0;
-    for (const u of ins) {
-      total += Math.round(u.amount * 1e8);
-    }
-    console.log('Total UTXO amount:', total / 1e8, 'NITO');
-
-    const txSize = (ins.length * 68) + 50; // Estimation simplifiée pour consolidation
-    const feeRate = DYNAMIC_FEE_RATE || MIN_FEE_RATE;
-    const inputFee = Math.max(Math.round((ins.length * 150 + 50) * (feeRate * 1e8) / 1000), Math.round(MIN_CONSOLIDATION_FEE * 1e8));
-
-    console.log('Consolidation - UTXOs:', ins.length, 'Estimated size:', txSize, 'vbytes, Fee:', inputFee / 1e8, 'NITO');
-
-    const target = total - inputFee;
-    if (target < getDustThreshold(destScriptType)) {
-      alert(i18next.t('errors.consolidation_low_amount'));
-      console.error('Target amount too low:', target / 1e8, 'NITO');
-      return;
-    }
-
+    const originalWalletAddress = walletAddress;
     walletAddress = sourceAddress;
 
-    console.log('Preparing consolidation transaction');
-    await new Promise(resolve => setTimeout(resolve, 500));
+    let currentUtxos = [...initialUtxos]; // Copie pour modification
+    let stepCount = 1;
+    let totalSuccess = 0;
+    let lastTxid = null;
+    let consecutiveIdenticalScans = 0;
+    const MAX_IDENTICAL_SCANS = 3; // Limite pour éviter boucle infinie
 
-    let hex;
-    // MODIFICATION: Passer isConsolidation = true
-    if (sourceType === 'bech32' && destScriptType === 'p2wpkh') {
-      hex = await signTx(to, target / 1e8, true);
-    } else {
-      hex = await signTxWithPSBT(to, target / 1e8, true);
+    try {
+      // Boucle pour traiter tous les batches
+      while (currentUtxos.length > 1 && stepCount <= 50) {
+        console.log(`🔄 Étape ${stepCount} - UTXOs restants: ${currentUtxos.length}`);
+
+        // ✅ NOUVELLE LOGIQUE: Si on a 2 UTXOs depuis plusieurs scans → Terminer
+        if (currentUtxos.length === 2 && consecutiveIdenticalScans >= MAX_IDENTICAL_SCANS) {
+          console.log(`🎯 CONSOLIDATION RÉUSSIE: 2 UTXOs restants après ${consecutiveIdenticalScans} scans identiques`);
+          console.log(`📋 UTXO 1: ${currentUtxos[0].txid} (${currentUtxos[0].amount} NITO)`);
+          console.log(`📋 UTXO 2: ${currentUtxos[1].txid} (${currentUtxos[1].amount} NITO)`);
+          break;
+        }
+
+        // Prendre le prochain batch d'UTXOs
+        const batchUtxos = currentUtxos.slice(0, Math.min(MAX_UTXOS_PER_BATCH, currentUtxos.length));
+
+        // Calculer le montant total du batch
+        let batchTotal = 0;
+        for (const u of batchUtxos) {
+          batchTotal += Math.round(u.amount * 1e8);
+        }
+
+        const feeRate = DYNAMIC_FEE_RATE || MIN_FEE_RATE;
+        const batchFee = Math.max(
+          Math.round((batchUtxos.length * 150 + 50) * (feeRate * 1e8) / 1000),
+          Math.round(MIN_CONSOLIDATION_FEE * 1e8)
+        );
+
+        const target = batchTotal - batchFee;
+
+        if (target < getDustThreshold('p2wpkh')) {
+          console.log(`⚠️ Batch trop petit (${target / 1e8} NITO), on passe`);
+          currentUtxos = currentUtxos.slice(batchUtxos.length);
+          continue;
+        }
+
+        console.log(`🚀 Étape ${stepCount} - Consolidation: ${batchUtxos.length} UTXOs → 1 UTXO (${target / 1e8} NITO)`);
+
+        try {
+          // Utiliser signTxBatch pour ce batch spécifique
+          const hex = await signTxBatch(sourceAddress, target / 1e8, batchUtxos, true);
+          const txid = await rpc('sendrawtransaction', [hex]);
+
+          console.log(`✅ Étape ${stepCount} réussie, TXID: ${txid}`);
+          totalSuccess++;
+          lastTxid = txid;
+
+          // ✅ CORRECTION: Si c'est la même transaction que la précédente, on arrête
+          if (stepCount > 1 && txid === lastTxid) {
+            console.log(`🔄 Même TXID que l'étape précédente, consolidation terminée`);
+            break;
+          }
+
+          console.log('🔄 Nouveau UTXO de change:', (target / 1e8).toFixed(8), 'NITO');
+
+          // Attendre plus longtemps pour la synchronisation blockchain
+          await new Promise(resolve => setTimeout(resolve, 5000));
+
+          // Recalculer les UTXOs
+          const previousUtxosCount = currentUtxos.length;
+          const previousUtxosSignature = currentUtxos.map(u => `${u.txid}:${u.vout}`).sort().join(',');
+
+          currentUtxos = await utxos(sourceAddress);
+          const newUtxosSignature = currentUtxos.map(u => `${u.txid}:${u.vout}`).sort().join(',');
+
+          console.log(`📊 UTXOs: ${previousUtxosCount} → ${currentUtxos.length}`);
+
+          // ✅ NOUVELLE LOGIQUE: Détecter si les UTXOs n'ont pas changé
+          if (newUtxosSignature === previousUtxosSignature) {
+            consecutiveIdenticalScans++;
+            console.log(`⚠️ UTXOs identiques (scan ${consecutiveIdenticalScans}/${MAX_IDENTICAL_SCANS})`);
+          } else {
+            consecutiveIdenticalScans = 0; // Reset si changement détecté
+          }
+
+        } catch (error) {
+          if (error.message.includes('txn-mempool-conflict')) {
+            console.log(`⚠️ Conflit mempool étape ${stepCount}, attente 5s...`);
+            await new Promise(resolve => setTimeout(resolve, 5000));
+            currentUtxos = await utxos(sourceAddress);
+            continue; // Retry la même étape
+          } else if (error.message.includes('Transaction already in block chain')) {
+            console.log(`✅ Transaction déjà confirmée à l'étape ${stepCount}`);
+            totalSuccess++;
+            await new Promise(resolve => setTimeout(resolve, 3000));
+            currentUtxos = await utxos(sourceAddress);
+          } else {
+            throw error; // Autre erreur, on arrête
+          }
+        }
+
+        stepCount++;
+      }
+
+      hideLoadingSpinner();
+
+      if (totalSuccess > 0) {
+        await showSuccessPopup(lastTxid);
+        alert(i18next.t('consolidation_final_completed', { transactions: totalSuccess, utxos: currentUtxos.length }));
+        setTimeout(() => $('refreshBalanceButton').click(), 3000);
+      } else if (currentUtxos.length <= 1) {
+        alert(i18next.t('consolidation_single_utxo_completed'));
+        setTimeout(() => $('refreshBalanceButton').click(), 3000);
+      } else {
+        alert(i18next.t('consolidation_stopped', { utxos: currentUtxos.length }));
+      }
+
+    } catch (error) {
+      hideLoadingSpinner();
+      if (error.message.includes('Transaction already in block chain')) {
+        await showSuccessPopup(lastTxid);
+        alert(i18next.t('consolidation_already_done'));
+        setTimeout(() => $('refreshBalanceButton').click(), 1000);
+      } else {
+        throw error;
+      }
+    } finally {
+      walletAddress = originalWalletAddress;
     }
 
-    console.log('Consolidation hex:', hex, 'TXID:', bitcoin.Transaction.fromHex(hex).getId());
-
-    console.log('Broadcasting transaction');
-    await new Promise(resolve => setTimeout(resolve, 1000));
-    const txid = await rpc('sendrawtransaction', [hex]);
-
-    await showSuccessPopup(txid);
-    console.log('Consolidation successful, TXID:', txid);
-    setTimeout(() => $('refreshBalanceButton').click(), 3000);
   } catch (e) {
-  alert(i18next.t('errors.consolidation_error', { message: e.message }));
+    hideLoadingSpinner();
+    alert(i18next.t('errors.consolidation_error', { message: e.message }));
     console.error('Consolidation error:', e);
   }
 }
@@ -870,19 +1109,23 @@ function updateLastActionTime() {
 }
 
 function clearSensitiveData() {
-  walletKeyPair = null;
-  walletPublicKey = null;
-  legacyAddress = '';
-  p2shAddress = '';
-  bech32Address = '';
-  walletAddress = '';
+  // ✅ EFFACER SEULEMENT LES DONNÉES GÉNÉRÉES (section génération)
   const privateKeyHex = document.getElementById('privateKeyHex');
   const privateKey = document.getElementById('privateKey');
+  const hdMasterKey = document.getElementById('hdMasterKey');
+  const mnemonicPhrase = document.getElementById('mnemonicPhrase');
   const generatedAddress = document.getElementById('generatedAddress');
+
   if (privateKeyHex) privateKeyHex.textContent = '';
   if (privateKey) privateKey.textContent = '';
+  if (hdMasterKey) hdMasterKey.textContent = '';
+  if (mnemonicPhrase) mnemonicPhrase.textContent = '';
   if (generatedAddress) generatedAddress.innerHTML = '';
-  console.log('Sensitive data cleared');
+
+  // ❌ NE PAS EFFACER LES DONNÉES IMPORTÉES
+  // walletKeyPair, walletPublicKey, bech32Address restent intacts
+
+  console.log('Generated keys cleared, imported wallet preserved');
 }
 
 window.copyToClipboard = copyToClipboard;
@@ -891,11 +1134,9 @@ window.consolidateUtxos = consolidateUtxos;
 const $ = id => document.getElementById(id);
 
 window.addEventListener('load', async () => {
-
   console.log('Loading wallet.js');
 
   try {
-
     const requiredIds = [
       'themeToggle', 'languageSelect', 'generateButton', 'importWalletButton', 'refreshBalanceButton',
       'prepareTxButton', 'broadcastTxButton', 'cancelTxButton',
@@ -904,8 +1145,11 @@ window.addEventListener('load', async () => {
       'copyGenWif', 'copyTxHex', 'generatedAddress',
       'privateKeyHex', 'privateKey', 'revealHex', 'revealWif', 'revealWifInput',
       'inactivityTimer',
-      'keyCounter' // Ajout pour le compteur
+      'keyCounter',
+      'hdMasterKey', 'mnemonicPhrase', 'copyHdKey', 'copyMnemonic',
+      'revealHdKey', 'revealMnemonic', 'hdPassphrase'
     ];
+
     for (const id of requiredIds) {
       if (!$(id)) {
         console.error(`Element ${id} missing`);
@@ -960,11 +1204,22 @@ window.addEventListener('load', async () => {
     $('copyGenHex').onclick = () => copyToClipboard('privateKeyHex');
     $('copyGenWif').onclick = () => copyToClipboard('privateKey');
     $('copyTxHex').onclick = () => copyToClipboard('signedTx');
+    $('copyHdKey').onclick = () => copyToClipboard('hdMasterKey');
+    $('copyMnemonic').onclick = () => copyToClipboard('mnemonicPhrase');
 
     $('generateButton').onclick = async () => {
       updateLastActionTime();
       try {
-        const kp = ECPair.makeRandom({ network: NITO_NETWORK });
+        // Générer la phrase mnémonique et la clé HD
+        const mnemonic = generateHDMnemonic(12);
+        const seed = bip39.mnemonicToSeedSync(mnemonic);
+        const hdWallet = bip32.fromSeed(seed);
+        const hdMasterKey = hdWallet.toBase58();
+
+        // Dériver la première adresse (comme avant)
+        const bech32Node = hdWallet.derivePath("m/84'/0'/0'/0/0");
+        const kp = ECPair.fromPrivateKey(bech32Node.privateKey, { network: NITO_NETWORK });
+
         const privateKeyHex = Buffer.from(kp.privateKey).toString('hex');
         const privateKey = kp.toWIF();
         const pubkeyBuffer = Buffer.from(kp.publicKey);
@@ -984,26 +1239,29 @@ window.addEventListener('load', async () => {
           throw new Error(i18next.t('errors.invalid_addresses'));
         }
 
-        const legacyBalance = await balance(addresses.legacy);
-        const p2shBalance = await balance(addresses.p2sh);
         const bech32Balance = await balance(addresses.bech32);
 
+        // Afficher toutes les clés
         $('privateKeyHex').textContent = privateKeyHex;
         $('privateKey').textContent = privateKey;
+        $('hdMasterKey').textContent = hdMasterKey;
+        $('mnemonicPhrase').textContent = mnemonic;
+
+        // Flouter toutes les clés
         $('privateKeyHex').classList.add('blurred');
         $('privateKey').classList.add('blurred');
+        $('hdMasterKey').classList.add('blurred');
+        $('mnemonicPhrase').classList.add('blurred');
 
+        // Afficher seulement l'adresse Bech32
         $('generatedAddress').innerHTML = DOMPurify.sanitize(`
           Bech32: <span id="generatedBech32Address">${addresses.bech32}</span> <button class="copy-btn" id="copyGeneratedBech32Addr">📋</button> (Solde: ${bech32Balance.toFixed(8)} NITO)
         `);
 
-        const copyGeneratedLegacyAddr = $('copyGeneratedLegacyAddr');
-        const copyGeneratedP2shAddr = $('copyGeneratedP2shAddr');
         const copyGeneratedBech32Addr = $('copyGeneratedBech32Addr');
-        if (copyGeneratedLegacyAddr) copyGeneratedLegacyAddr.onclick = () => copyToClipboard('generatedLegacyAddress');
-        if (copyGeneratedP2shAddr) copyGeneratedP2shAddr.onclick = () => copyToClipboard('generatedP2shAddress');
         if (copyGeneratedBech32Addr) copyGeneratedBech32Addr.onclick = () => copyToClipboard('generatedBech32Address');
 
+        // Boutons de révélation existants
         const revealHex = $('revealHex');
         const revealWif = $('revealWif');
         if (revealHex) {
@@ -1027,9 +1285,32 @@ window.addEventListener('load', async () => {
           };
         }
 
+        // NOUVEAUX boutons de révélation HD
+        const revealHdKey = $('revealHdKey');
+        const revealMnemonic = $('revealMnemonic');
+        if (revealHdKey) {
+          revealHdKey.onclick = () => {
+            revealHdKey.disabled = true;
+            $('hdMasterKey').classList.remove('blurred');
+            setTimeout(() => {
+              $('hdMasterKey').classList.add('blurred');
+              revealHdKey.disabled = false;
+            }, 10000);
+          };
+        }
+        if (revealMnemonic) {
+          revealMnemonic.onclick = () => {
+            revealMnemonic.disabled = true;
+            $('mnemonicPhrase').classList.remove('blurred');
+            setTimeout(() => {
+              $('mnemonicPhrase').classList.add('blurred');
+              revealMnemonic.disabled = false;
+            }, 10000);
+          };
+        }
+
         // Incrémenter le compteur après la génération réussie
         await incrementCounter();
-        // Mettre à jour l'affichage du compteur
         await updateCounterDisplay();
       } catch (e) {
         alert(i18next.t('errors.generation_error', { message: e.message }));
@@ -1040,12 +1321,30 @@ window.addEventListener('load', async () => {
     $('importWalletButton').onclick = async () => {
       updateLastActionTime();
       try {
-        const wif = $('privateKeyWIF').value.trim();
-        if (!wif) {
+        const input = $('privateKeyWIF').value.trim();
+        const hdPassphrase = $('hdPassphrase').value.trim();
+
+        if (!input) {
           alert(i18next.t('errors.import_empty'));
           return;
         }
-        const addresses = /^[0-9a-fA-F]{64}$/.test(wif) ? importHex(wif) : importWIF(wif);
+
+        let addresses;
+
+        // Détection automatique du type d'entrée
+        if (input.startsWith('xprv')) {
+          // Clé HD (xprv)
+          addresses = importHDWallet(input, hdPassphrase);
+        } else if (input.split(' ').length >= 12 && input.split(' ').length <= 24) {
+          // Phrase mnémonique (12 ou 24 mots)
+          addresses = importHDWallet(input, hdPassphrase);
+        } else if (/^[0-9a-fA-F]{64}$/.test(input)) {
+          // Clé privée hex (64 caractères)
+          addresses = importHex(input);
+        } else {
+          // Clé privée WIF
+          addresses = importWIF(input);
+        }
 
         if (!await validateAddress(addresses.legacy) ||
             !await validateAddress(addresses.p2sh) ||
@@ -1059,14 +1358,14 @@ window.addEventListener('load', async () => {
         walletAddress = bech32Address;
         walletPublicKey = addresses.publicKey;
         walletKeyPair = addresses.keyPair;
-        const legacyBalance = await balance(legacyAddress);
-        const p2shBalance = await balance(p2shAddress);
+
         const bech32Balance = await balance(addresses.bech32);
-        const totalBalance = legacyBalance + p2shBalance + bech32Balance;
+
+        // Afficher seulement l'adresse Bech32
         $('walletAddress').innerHTML = DOMPurify.sanitize(`
           Bech32: <span id="bech32Address">${addresses.bech32}</span> <button class="copy-btn" id="copyBech32Addr">📋</button> (Solde: ${bech32Balance.toFixed(8)} NITO)
         `);
-        $('walletBalance').textContent = totalBalance.toFixed(8);
+        $('walletBalance').textContent = bech32Balance.toFixed(8);
         console.log('Wallet imported:', addresses);
 
         // Exposition variables pour messagerie
@@ -1075,9 +1374,6 @@ window.addEventListener('load', async () => {
         window.bech32Address = bech32Address;
         window.rpc = rpc;
         console.log("✅ Variables messagerie exposées:", bech32Address);
-
-        setTimeout(() => {
-        }, 200);
 
         $('privateKeyWIF').classList.add('blurred-input');
 
@@ -1093,11 +1389,7 @@ window.addEventListener('load', async () => {
           };
         }
 
-        const copyLegacyAddr = $('copyLegacyAddr');
-        const copyP2shAddr = $('copyP2shAddr');
         const copyBech32Addr = $('copyBech32Addr');
-        if (copyLegacyAddr) copyLegacyAddr.onclick = () => copyToClipboard('legacyAddress');
-        if (copyP2shAddr) copyP2shAddr.onclick = () => copyToClipboard('p2shAddress');
         if (copyBech32Addr) copyBech32Addr.onclick = () => copyToClipboard('bech32Address');
 
         const consolidateContainer = document.querySelector('.consolidate-container');
@@ -1114,22 +1406,11 @@ window.addEventListener('load', async () => {
           consolidateButton.onclick = () => consolidateUtxos();
           consolidateButtonInjected = true;
           console.log('Consolidate button injected');
-
-        setTimeout(() => {
-        }, 500);
         } else {
           const existingButton = $('consolidateButton');
           existingButton.textContent = i18next.t('send_section.consolidate_button');
           existingButton.onclick = () => consolidateUtxos();
           console.log('Consolidate button already present, event attached');
-
-        // Forcer l'exposition des variables globales pour la messagerie
-        setTimeout(() => {
-        }, 100);
-
-        // Forcer l'exposition des variables globales pour la messagerie
-        setTimeout(() => {
-        }, 100);
         }
       } catch (e) {
         alert(i18next.t('errors.import_error', { message: e.message }));
@@ -1141,32 +1422,19 @@ window.addEventListener('load', async () => {
       updateLastActionTime();
       if (!walletAddress) return alert(i18next.t('errors.import_first'));
       try {
-        const legacyBalance = await balance(legacyAddress);
-        const p2shBalance = await balance(p2shAddress);
         const bech32Balance = await balance(bech32Address);
-        const totalBalance = legacyBalance + p2shBalance + bech32Balance;
 
-        if (!await validateAddress(legacyAddress) ||
-            !await validateAddress(p2shAddress) ||
-            !await validateAddress(bech32Address)) {
+        if (!await validateAddress(bech32Address)) {
           throw new Error(i18next.t('errors.invalid_addresses'));
         }
 
-        const safeLegacy = legacyAddress;
-        const safeP2sh = p2shAddress;
         const safeBech32 = bech32Address;
         $('walletAddress').innerHTML = DOMPurify.sanitize(`
-          Legacy: <span id="legacyAddress">${safeLegacy}</span> <button class="copy-btn" id="copyLegacyAddr">📋</button> (Solde: ${legacyBalance.toFixed(8)} NITO)<br>
-          P2SH: <span id="p2shAddress">${safeP2sh}</span> <button class="copy-btn" id="copyP2shAddr">📋</button> (Solde: ${p2shBalance.toFixed(8)} NITO)<br>
           Bech32: <span id="bech32Address">${safeBech32}</span> <button class="copy-btn" id="copyBech32Addr">📋</button> (Solde: ${bech32Balance.toFixed(8)} NITO)
         `);
-        $('walletBalance').textContent = totalBalance.toFixed(8);
+        $('walletBalance').textContent = bech32Balance.toFixed(8);
 
-        const copyLegacyAddr = $('copyLegacyAddr');
-        const copyP2shAddr = $('copyP2shAddr');
         const copyBech32Addr = $('copyBech32Addr');
-        if (copyLegacyAddr) copyLegacyAddr.onclick = () => copyToClipboard('legacyAddress');
-        if (copyP2shAddr) copyP2shAddr.onclick = () => copyToClipboard('p2shAddress');
         if (copyBech32Addr) copyBech32Addr.onclick = () => copyToClipboard('bech32Address');
       } catch (e) {
         alert(i18next.t('errors.refresh_error', { message: e.message }));
@@ -1189,21 +1457,32 @@ window.addEventListener('load', async () => {
           alert(i18next.t('errors.invalid_address'));
           return;
         }
+
+        showLoadingSpinner();
+
         const sourceType = $('debitAddressType').value;
         const destType = getAddressType(dest);
         let hex;
-        // MODIFICATION: Ne pas passer isConsolidation (défaut false)
-        if (sourceType === 'bech32' && destType === 'p2wpkh') {
-          walletAddress = bech32Address;
-          hex = await signTx(dest, amt);
-        } else {
-          walletAddress = sourceType === 'legacy' ? legacyAddress : sourceType === 'p2sh' ? p2shAddress : bech32Address;
-          hex = await signTxWithPSBT(dest, amt);
+
+        try {
+          if (sourceType === 'bech32' && destType === 'p2wpkh') {
+            walletAddress = bech32Address;
+            hex = await signTx(dest, amt);
+          } else {
+            walletAddress = sourceType === 'legacy' ? legacyAddress : sourceType === 'p2sh' ? p2shAddress : bech32Address;
+            hex = await signTxWithPSBT(dest, amt);
+          }
+
+          hideLoadingSpinner();
+          $('signedTx').textContent = hex;
+          $('txHexContainer').style.display = 'block';
+          alert(i18next.t('OK.transaction_prepared'));
+        } catch (e) {
+          hideLoadingSpinner();
+          throw e;
         }
-        $('signedTx').textContent = hex;
-        $('txHexContainer').style.display = 'block';
-        alert(i18next.t('OK.transaction_prepared'));
       } catch (e) {
+        hideLoadingSpinner();
         alert(i18next.t('errors.transaction_error', { message: e.message }));
         console.error('Transaction preparation error:', e);
       }
@@ -1213,14 +1492,20 @@ window.addEventListener('load', async () => {
       updateLastActionTime();
       const hex = $('signedTx').textContent.trim();
       if (!hex) return alert(i18next.t('errors.no_transaction'));
+
       try {
+        showLoadingSpinner();
         const txid = await rpc('sendrawtransaction', [hex]);
+        hideLoadingSpinner();
+
         await showSuccessPopup(txid);
         $('destinationAddress').value = '';
         $('amountNito').value = '';
         $('signedTx').textContent = '';
+        $('txHexContainer').style.display = 'none';
         setTimeout(() => $('refreshBalanceButton').click(), 3000);
       } catch (e) {
+        hideLoadingSpinner();
         alert(i18next.t('errors.broadcast_error', { message: e.message }));
         console.error('Broadcast error:', e, 'Transaction hex:', hex);
       }
@@ -1236,5 +1521,4 @@ window.addEventListener('load', async () => {
     alert(i18next.t('errors.node_connection', { message: e.message }));
     console.error('Connection error:', e);
   }
-
 });
