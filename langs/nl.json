@@ -16,8 +16,10 @@
   "generate_section": {
     "title": "🎯 Genereren van een privé Nito-sleutel",
     "generate_button": "🎲 Genereren",
-    "private_key_hex": "Privésleutel (hex):",
-    "private_key_wif": "WIF:",
+    "private_key_hex": "HEX :",
+    "private_key_wif": "WIF :",
+    "hd_master_key": "🔐 xprv HD :",
+    "mnemonic_phrase": "🎯 mnémonique HD :",
     "copy": "📋",
     "reveal": "👁️ Tonen",
     "warning": "<span id=\"inactivityTimer\">[10:00]</span> ⚠️ Bewaar de privésleutel onmiddellijk! Deze wordt verwijderd na 10 minuten inactiviteit of na het vernieuwen van de pagina."
