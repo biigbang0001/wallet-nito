@@ -53,7 +53,7 @@ class NitoMessaging {
 
   checkInitialized() {
     if (!walletData.isInitialized) {
-      throw new Error('Veuillez d\'abord importer un wallet dans la section "Importer un wallet"');
+    throw new Error(i18next.t('errors.wallet_not_initialized'));
     }
   }
 
@@ -471,8 +471,8 @@ class NitoMessaging {
       const percentage = Math.round((current / total) * 100);
       progressElement.innerHTML = `
         <div style="text-align: center;">
-          <div style="margin-bottom: 10px; font-weight: bold;">Analyse des messages</div>
-          <div style="margin-bottom: 5px;">${current}/${total} transactions (${percentage}%)</div>
+          <div style="margin-bottom: 10px; font-weight: bold;">${i18next.t('progress_indicators.analyzing_messages')}</div>
+          <div style="margin-bottom: 5px;">${current}/${total} ${i18next.t('progress_indicators.transactions')} (${percentage}%)</div>
           <div style="width: 300px; background: #ddd; border-radius: 10px; height: 20px;">
             <div style="width: ${percentage}%; background: #4b5e40; height: 20px; border-radius: 10px; transition: width 0.3s;"></div>
           </div>
@@ -755,7 +755,7 @@ class NitoMessaging {
         await window.consolidateUtxos();
         console.log('✅ Consolidation terminée via wallet principal');
 
-        alert('⚠️ Consolidation terminée ! Vous devez republier votre clé publique pour pouvoir recevoir de nouveaux messages.');
+        alert(i18next.t('errors.republish_public_key'));
 
         return { success: true, message: 'Consolidation terminée' };
       } else {
@@ -961,11 +961,11 @@ function setupMessagingInterface() {
   document.getElementById('sendMessageButton')?.addEventListener('click', () => {
     const message = document.getElementById('messageInput')?.value.trim();
     if (!message) {
-      alert('Veuillez entrer un message');
+      alert(i18next.t('errors.enter_message'));
       return;
     }
     if (message.length > MESSAGING_CONFIG.MAX_MESSAGE_LENGTH) {
-      alert(`Message trop long (${message.length}/${MESSAGING_CONFIG.MAX_MESSAGE_LENGTH})`);
+      alert(i18next.t('errors.message_too_long', { length: message.length, max: MESSAGING_CONFIG.MAX_MESSAGE_LENGTH }));
       return;
     }
 
@@ -979,11 +979,11 @@ function setupMessagingInterface() {
       const recipient = document.getElementById('recipientAddress').value.trim();
 
       if (!message || !recipient) {
-        alert('Veuillez remplir tous les champs');
+        alert(i18next.t('errors.fill_all_fields'));
         return;
       }
       if (!recipient.startsWith('nito1')) {
-        alert('Adresse bech32 invalide (doit commencer par nito1)');
+        alert(i18next.t('errors.invalid_bech32'));
         return;
       }
 
@@ -993,7 +993,12 @@ function setupMessagingInterface() {
         // Plus d'alert - le showSuccessPopup s'occupe de tout
         console.log(`✅ Message envoyé avec succès ! ID: ${result.messageId}, Transactions: ${result.chunks}/${result.totalChunks}, Coût: ${result.totalCost.toFixed(8)} NITO`);
       } else {
-        alert(`⚠️ Message partiellement envoyé\nID: ${result.messageId}\nTransactions: ${result.chunks}/${result.totalChunks}\nCoût: ${result.totalCost.toFixed(8)} NITO\n\nCertains chunks n'ont pas pu être envoyés. Réessayez plus tard.`);
+        alert(i18next.t('success_messages.message_sent_partial', {
+          messageId: result.messageId,
+          chunks: result.chunks,
+          totalChunks: result.totalChunks,
+          cost: result.totalCost.toFixed(8)
+        }));
       }
 
       document.getElementById('messageInput').value = '';
@@ -1032,12 +1037,7 @@ function setupMessagingInterface() {
 
   document.getElementById('consolidateMessagingButton')?.addEventListener('click', async () => {
     try {
-      const confirmed = confirm(
-        `⚠️ ATTENTION: La consolidation va regrouper tous vos UTXOs.\n\n` +
-        `Après consolidation, vous devrez republier votre clé publique\n` +
-        `pour pouvoir recevoir de nouveaux messages.\n\n` +
-        `Voulez-vous continuer ?`
-      );
+      const confirmed = confirm(i18next.t('encrypted_messaging.consolidate_confirm_message'));
 
       if (!confirmed) return;
 
@@ -1045,7 +1045,7 @@ function setupMessagingInterface() {
       const result = await messaging.consolidateMessagingUtxos();
 
       if (result.success) {
-        alert(`✅ ${result.message}\n\n⚠️ N'oubliez pas de republier votre clé publique !`);
+      alert(i18next.t('errors.consolidation_completed'));
       }
     } catch (error) {
       alert(`❌ Erreur: ${error.message}`);
@@ -1063,7 +1063,7 @@ function updateCharCounter() {
   const counter = document.getElementById('messageCharCounter');
   if (input && counter) {
     const length = input.value.length;
-    counter.textContent = `${length}/${MESSAGING_CONFIG.MAX_MESSAGE_LENGTH} caractères`;
+    counter.textContent = i18next.t('messaging_char_counter', { length: length, max: MESSAGING_CONFIG.MAX_MESSAGE_LENGTH });
     counter.className = length > MESSAGING_CONFIG.MAX_MESSAGE_LENGTH ? 'char-counter over-limit' : 'char-counter';
   }
 }
@@ -1076,7 +1076,7 @@ function displayMessages(messages) {
   list.style.display = messages.length > 0 ? 'block' : 'none';
 
   if (messages.length === 0) {
-    list.innerHTML = '<div class="message-item">Aucun message reçu</div>';
+    list.innerHTML = `<div class="message-item">${i18next.t('encrypted_messaging.no_messages')}</div>`;
     return;
   }
 
