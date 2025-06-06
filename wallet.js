@@ -1147,7 +1147,7 @@ window.addEventListener('load', async () => {
       'inactivityTimer',
       'keyCounter',
       'hdMasterKey', 'mnemonicPhrase', 'copyHdKey', 'copyMnemonic',
-      'revealHdKey', 'revealMnemonic', 'hdPassphrase'
+      'revealHdKey', 'revealMnemonic'
     ];
 
     for (const id of requiredIds) {
@@ -1322,7 +1322,7 @@ window.addEventListener('load', async () => {
       updateLastActionTime();
       try {
         const input = $('privateKeyWIF').value.trim();
-        const hdPassphrase = $('hdPassphrase').value.trim();
+        const hdPassphrase = '';
 
         if (!input) {
           alert(i18next.t('errors.import_empty'));
