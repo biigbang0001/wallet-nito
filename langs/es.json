@@ -1,5 +1,5 @@
 {
-  "title": "Cartera NITO",
+  "title": "Wallet NITO",
   "language_label": "Idioma:",
   "languages": {
     "fr": "Francés",
@@ -20,12 +20,12 @@
     "private_key_wif": "WIF:",
     "copy": "📋",
     "reveal": "👁️ Revelar",
-    "warning": "<span id=\"inactivityTimer\">[10:00]</span> ⚠️ ¡Guarde la clave privada inmediatamente! Se borrará tras 10 minutos de inactividad o al recargar la página."
+    "warning": "<span id=\"inactivityTimer\">[10:00]</span> ⚠️ ¡Guarde la clave privada inmediatamente! Se eliminará después de 10 minutos de inactividad o al recargar la página."
   },
   "import_section": {
-    "title": "📥 Importar una cartera",
+    "title": "📥 Importar un wallet",
     "placeholder": "Clave privada (WIF/Hex) O Frase mnemónica (12/24 palabras) O Clave HD (xprv...)",
-    "passphrase_placeholder": "Frase de contraseña HD (opcional – solo para frases mnemónicas)",
+    "passphrase_placeholder": "Frase de contraseña HD (opcional - solo para frases mnemónicas)",
     "import_button": "📥 Importar",
     "balance": "Saldo:",
     "refresh_button": "🔄"
@@ -33,8 +33,8 @@
   "send_section": {
     "title": "📤 Enviar NITO",
     "destination_placeholder": "Dirección del destinatario",
-    "amount_placeholder": "Cantidad (NITO)",
-    "fee_placeholder": "Comisión (NITO)",
+    "amount_placeholder": "Monto (NITO)",
+    "fee_placeholder": "Comisiones (NITO)",
     "debit_label": "Dirección a debitar:",
     "legacy_option": "Legacy",
     "p2sh_option": "P2SH",
@@ -49,7 +49,7 @@
   "encrypted_messaging": {
     "title": "🔒 Mensajería cifrada",
     "publish_pubkey": "🔑 Publicar mi clave pública",
-    "publish_info": "Publique su clave pública una vez para permitir que otros le envíen mensajes cifrados. (Si consolida UTXOs, por favor, vuelva a publicar su clave pública para enviar/recibir mensajes)",
+    "publish_info": "Publique su clave pública una vez para permitir que otros le envíen mensajes cifrados. (Si consolida UTXOs, vuelva a publicar su clave pública para enviar/recibir mensajes)",
     "write_title": "✍️ Escribir un mensaje",
     "message": "Mensaje",
     "from": "De",
@@ -65,7 +65,7 @@
     "unread_messages": "mensajes no leídos",
     "publish_success": "¡Clave pública publicada con éxito!",
     "message_canceled": "Envío de mensaje cancelado.",
-    "public_key_placeholder": "Introduzca la clave pública del destinatario (66 caracteres hexadecimales)",
+    "public_key_placeholder": "Ingrese la clave pública del destinatario (66 caracteres hexadecimales)",
     "read": "Leído",
     "unread": "No leído",
     "confirm_read": "Confirmar lectura",
@@ -81,17 +81,17 @@
       "analyzing_transactions": "Analizando transacciones"
     },
     "receipt": {
-      "sent": "✅ ¡Recibo enviado!",
-      "chunks": "Fragmentos:",
+      "sent": "✅ ¡Acuse de recibo enviado!",
+      "chunks": "Chunks:",
       "cost": "Costo:",
       "confirmation": "Confirmación:",
       "txid": "TXID:",
       "close": "Cerrar"
     },
-    "confirm_read_message": "¿Confirmar la lectura de este mensaje?\n\n⚠️ ADVERTENCIA: Esta acción:\n• Enviará un recibo al remitente\n• Eliminará permanentemente el mensaje de su bandeja de entrada\n• Incurrirá en comisiones de transacción\n• Después de la consolidación, deberá volver a publicar su clave pública\n\n¿Desea continuar?",
-    "consolidate_confirm_message": "⚠️ ADVERTENCIA: La consolidación combinará todos sus UTXOs.\n\nDespués de la consolidación, deberá volver a publicar su clave pública\npara recibir nuevos mensajes.\n\n¿Desea continuar?",
+    "confirm_read_message": "¿Confirmar la lectura de este mensaje?\n\n⚠️ ATENCIÓN: Esta acción:\n• Enviará un acuse de recibo al remitente\n• Eliminará permanentemente el mensaje de su bandeja\n• Incurrirá en costos de transacción\n• Después de la consolidación, deberá volver a publicar su clave pública\n\n¿Desea continuar?",
+    "consolidate_confirm_message": "⚠️ ATENCIÓN: La consolidación agrupará todos sus UTXOs.\n\nDespués de la consolidación, deberá volver a publicar su clave pública para recibir nuevos mensajes.\n\n¿Desea continuar?",
     "message_read_deleted": "✅ Mensaje leído y eliminado",
-    "receipt_sent_info": "Recibo enviado - {chunks}/{totalChunks} fragmentos - Costo: {cost} NITO",
+    "receipt_sent_info": "Acuse de recibo enviado - {chunks}/{totalChunks} chunks - Costo: {cost} NITO",
     "no_messages": "No se han recibido mensajes",
     "message_error": "Error",
     "signature_verified": "✓ Firma verificada",
@@ -100,7 +100,7 @@
   "footer": {
     "open_source": "Este proyecto es de código abierto",
     "view_code": "Ver el código en GitHub",
-    "official_site": "Sitio web oficial de NITO"
+    "official_site": "Sitio oficial de NITO"
   },
   "popup": {
     "success": {
@@ -126,7 +126,7 @@
     "no_utxo": "No hay UTXO disponible para esta dirección.",
     "only_bech32_supported": "Solo se admiten direcciones Bech32 para esta operación.",
     "insufficient_funds": "Fondos insuficientes para realizar esta transacción.",
-    "low_amount": "Cantidad demasiado baja: {amount} NITO. Mínimo requerido: {minimum} NITO.",
+    "low_amount": "Monto demasiado bajo: {amount} NITO. Mínimo requerido: {minimum} NITO.",
     "invalid_redeem_script": "Script de redención inválido.",
     "unsupported_address_type": "Tipo de dirección no soportado.",
     "signature_failed": "Fallo en la firma para la entrada {input}: {message}",
@@ -135,20 +135,20 @@
     "reveal_to_copy": "Revele el contenido antes de copiar.",
     "nothing_to_copy": "Nada que copiar.",
     "copy_error": "Error al copiar.",
-    "import_first": "Por favor, importe una cartera primero.",
+    "import_first": "Por favor, importe un wallet primero.",
     "consolidation_invalid_type": "Tipo de fuente inválido para la consolidación.",
     "consolidation_low_utxo": "Menos de 2 UTXOs disponibles para la consolidación.",
-    "consolidation_low_amount": "Cantidad total demasiado baja para la consolidación.",
+    "consolidation_low_amount": "Monto total demasiado bajo para la consolidación.",
     "consolidation_error": "Error durante la consolidación: {message}",
     "invalid_addresses": "Una o más direcciones generadas son inválidas.",
     "generation_error": "Error durante la generación: {message}",
-    "import_empty": "Por favor, introduzca una clave privada WIF, hexadecimal, frase mnemónica o clave HD.",
-    "import_error": "Error durante la importación: {message}",
+    "import_empty": "Por favor, ingrese una clave privada WIF, hexadecimal, frase mnemónica o clave HD.",
+    "import_error": "Error al importar: {message}",
     "refresh_error": "Error al actualizar el saldo: {message}",
-    "invalid_fields": "Rellene todos los campos con valores válidos.",
-    "invalid_address": "Dirección del destinatario inválida.",
+    "invalid_fields": "Complete todos los campos con valores válidos.",
+    "invalid_address": "Dirección de destinatario inválida.",
     "no_transaction": "No hay transacción para transmitir.",
-    "broadcast_error": "Error durante la transmisión: {message}",
+    "broadcast_error": "Error al transmitir: {message}",
     "missing_element": "Elemento faltante: {id}",
     "node_connection": "Error de conexión al nodo: {message}",
     "compression_error": "Error durante la compresión: {message}",
@@ -160,7 +160,7 @@
     "public_key_not_found": "Clave pública del destinatario no encontrada. Por favor, proporciónela manualmente.",
     "invalid_public_key": "Clave pública inválida (debe tener 66 caracteres hexadecimales).",
     "message_empty": "El mensaje no puede estar vacío.",
-    "send_chunk_error": "Error al enviar un fragmento del mensaje: {message}",
+    "send_chunk_error": "Error al enviar un fragmento de mensaje: {message}",
     "scan_messages_error": "Error al recuperar mensajes: {message}",
     "message_send_error": "Error al enviar el mensaje: {message}",
     "invalid_response_length": "La respuesta no puede exceder los 80 caracteres.",
@@ -168,20 +168,38 @@
     "read_response_error": "Error al enviar la respuesta: {message}",
     "message_too_long": "Mensaje demasiado largo ({length}/{max})",
     "invalid_bech32": "Dirección Bech32 inválida (debe comenzar con nito1)",
-    "enter_message": "Por favor, introduzca un mensaje",
-    "fill_all_fields": "Por favor, rellene todos los campos",
-    "no_utxo_available": "No hay UTXO disponible para enviar el recibo",
-    "no_utxo_conflict": "No hay más UTXOs disponibles tras el conflicto",
-    "wallet_not_initialized": "Por favor, importe una cartera primero en la sección 'Importar una cartera'",
+    "enter_message": "Por favor, ingrese un mensaje",
+    "fill_all_fields": "Por favor, complete todos los campos",
+    "no_utxo_available": "No hay UTXO disponible para enviar el acuse de recibo",
+    "no_utxo_conflict": "No hay más UTXO disponible tras el conflicto",
+    "wallet_not_initialized": "Por favor, importe un wallet primero en la sección \"Importar un wallet\"",
     "public_key_required": "Clave pública del destinatario no encontrada. El destinatario debe publicar su clave pública primero.",
     "consolidation_completed": "✅ ¡Consolidación completada!\n\n⚠️ ¡No olvide volver a publicar su clave pública!",
     "republish_public_key": "⚠️ ¡Consolidación completada! Debe volver a publicar su clave pública para recibir nuevos mensajes.",
-    "utxo_opreturn_consolidate": "Todos sus UTXOs contienen datos OP_RETURN (mensajes/claves). Use el botón '🔄 Consolidar UTXOs' para limpiarlos y realizar transacciones normales."
+    "utxo_opreturn_consolidate": "No hay UTXO disponible (todos contienen OP_RETURN, por favor consolide los UTXOs)",
+    "consolidation_bech32_only": "Consolidación disponible solo para Bech32",
+    "mnemonic_generation_error": "Error al generar la frase mnemónica",
+    "invalid_mnemonic": "Frase mnemónica inválida",
+    "hd_import_error": "Error de importación HD: {message}"
   },
   "copied": "¡Copiado!",
   "success_messages": {
     "public_key_published": "✅ ¡Clave pública publicada con éxito!\nTXID: {txid}\nCosto: {cost} NITO",
     "message_sent_full": "✅ ¡Mensaje enviado con éxito!\nID: {messageId}\nTransacciones: {chunks}/{totalChunks}\nCosto: {cost} NITO\n\n🔐 Cifrado Noble ECDH + AES-GCM",
-    "message_sent_partial": "⚠️ Mensaje enviado parcialmente\nID: {messageId}\nTransacciones: {chunks}/{totalChunks}\nCosto: {cost} NITO\n\nAlgunos fragmentos no pudieron enviarse. Intente de nuevo más tarde."
-  }
+    "message_sent_partial": "⚠️ Mensaje enviado parcialmente\nID: {messageId}\nTransacciones: {chunks}/{totalChunks}\nCosto: {cost} NITO\n\nAlgunos chunks no pudieron enviarse. Intente de nuevo más tarde."
+  },
+  "messaging_recipient_title": "📧 Destinatario del mensaje",
+  "messaging_estimated_cost": "Costo estimado: 0.0001 NITO (1 transacción)",
+  "progress_indicators": {
+    "preparing": "Preparando",
+    "sending": "Enviando",
+    "analyzing_messages": "Analizando mensajes"
+  },
+  "consolidation_progress": "Consolidando {count} UTXOs a {address}",
+  "consolidation_multiple_batches": "Se realizará en {count} transacciones automáticas",
+  "consolidation_single_transaction": "Solo se necesita una transacción",
+  "consolidation_final_completed": "✅ ¡Consolidación completada!\n{transactions} transacción(es) realizada(s)\nUTXOs finales: {utxos}",
+  "consolidation_single_utxo_completed": "✅ ¡Consolidación completada - Solo queda un UTXO!",
+  "consolidation_stopped": "⚠️ Consolidación detenida\nUTXOs restantes: {utxos}",
+  "consolidation_already_done": "✅ ¡Consolidación ya realizada!"
 }
