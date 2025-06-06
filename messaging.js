@@ -487,7 +487,7 @@ class NitoMessaging {
     try {
       console.log("📤 Envoi message vers:", recipientBech32Address);
 
-      this.updateProgressIndicator(0, 1, 'Préparation');
+      this.updateProgressIndicator(0, 1, i18next.t('progress_indicators.preparing'));
 
       const encryptedMessage = await this.encryptMessage(message, recipientBech32Address);
       const chunks = this.splitIntoChunks(encryptedMessage, MESSAGING_CONFIG.CHUNK_SIZE);
@@ -514,7 +514,7 @@ class NitoMessaging {
 
           console.log(`🚀 Envoi chunk ${i + 1}/${chunks.length} avec UTXO ${currentUtxo.amount} NITO`);
 
-          this.updateProgressIndicator(i + 1, chunks.length, 'Envoi');
+          this.updateProgressIndicator(i + 1, chunks.length, i18next.t('progress_indicators.sending'));
 
           const hex = await this.createOpReturnTransaction(
             recipientBech32Address,
@@ -585,11 +585,6 @@ class NitoMessaging {
           }
         }
 
-        setTimeout(() => {
-          console.log("🧹 Nettoyage automatique des UTXOs utilisés");
-          this.usedUtxos.clear();
-        }, 60000);
-
         const successfulChunks = transactions.length;
         console.log(`🎉 Message envoyé avec succès: ${successfulChunks}/${chunks.length} chunks`);
 
@@ -640,7 +635,7 @@ class NitoMessaging {
       let processedCount = 0;
       for (const tx of transactions) {
         processedCount++;
-        this.showScanProgress(processedCount, transactions.length);
+        this.showScanProgress(processedCount, transactions.length, i18next.t('progress_indicators.analyzing_messages'));
 
         const opReturnData = await this.extractTransactionOpReturn(tx.txid);
 
