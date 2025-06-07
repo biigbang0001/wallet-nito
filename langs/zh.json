@@ -16,8 +16,10 @@
   "generate_section": {
     "title": "🎯 生成Nito私钥",
     "generate_button": "🎲 生成",
-    "private_key_hex": "私钥（十六进制）：",
-    "private_key_wif": "WIF：",
+    "private_key_hex": "HEX :",
+    "private_key_wif": "WIF :",
+    "hd_master_key": "🔐 xprv HD :",
+    "mnemonic_phrase": "🎯 mnémonique HD :",
     "copy": "📋",
     "reveal": "👁️ 显示",
     "warning": "<span id=\"inactivityTimer\">[10:00]</span> ⚠️ 请立即保存私钥！它将在10分钟不活动或页面刷新后被删除。"
