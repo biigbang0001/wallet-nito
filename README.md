@@ -183,7 +183,7 @@ server {
     index index.html;
 
     # Content Security Policy (CSP)
-    add_header Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline' https://esm.sh https://cdn.jsdelivr.net https://cdnjs.cloudflare.com https://unpkg.com; connect-src 'self' https://<your-domain>/api/ https://<your-domain>/langs/ https://explorer.nito.network https://explorer.nito.network/ext/gettx/ https://nitoexplorer.org https://nitoexplorer.org/ext/gettx/ https://cdnjs.cloudflare.com; img-src 'self' https://raw.githubusercontent.com; style-src 'self' 'unsafe-inline';";
+    add_header Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline' https://esm.sh https://cdn.jsdelivr.net https://cdnjs.cloudflare.com https://unpkg.com; connect-src 'self' https://wallet-nito.nitopool.fr/api/ https://wallet-nito.nitopool.fr/langs/ https://explorer.nito.network https://explorer.nito.network/ext/gettx/ https://nitoexplorer.org https://nitoexplorer.org/ext/gettx/ https://esm.sh https://cdn.jsdelivr.net https://cdnjs.cloudflare.com; img-src 'self' https://raw.githubusercontent.com; style-src 'self' 'unsafe-inline';";
 
     # Proxy for API requests to your NITO node (via /api/)
     location /api/ {
