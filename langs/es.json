@@ -84,7 +84,8 @@
       "sending": "Enviando",
       "confirmation": "Confirmación",
       "analyzing_messages": "Analizando mensajes",
-      "analyzing_transactions": "Analizando transacciones"
+      "analyzing_transactions": "Analizando transacciones",
+      "preparing_utxos": "Preparando UTXOs: {{current}}/{{total}} fragmentos ({{percentage}}%)"
     },
     "receipt": {
       "sent": "✅ ¡Recibo enviado!",
