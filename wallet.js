@@ -34,7 +34,7 @@ const DUST_AMOUNT = {
   p2sh: 540
 };
 const MIN_CONSOLIDATION_FEE = 0.00005;
-const MAX_UTXOS_PER_BATCH = 50; // Limite d'UTXOs par transaction de consolidation
+const MAX_UTXOS_PER_BATCH = 100;
 
 let walletAddress = '';
 let legacyAddress = '';
