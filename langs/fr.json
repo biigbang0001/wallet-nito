@@ -84,7 +84,8 @@
       "sending": "Envoi",
       "confirmation": "Confirmation",
       "analyzing_messages": "Analyse des messages",
-      "analyzing_transactions": "Analyse des transactions"
+      "analyzing_transactions": "Analyse des transactions",
+      "preparing_utxos": "Préparation des UTXOs : {{current}}/{{total}} fragments ({{percentage}}%)"
     },
     "receipt": {
       "sent": "✅ Accusé de réception envoyé !",
