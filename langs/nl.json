@@ -84,7 +84,8 @@
       "sending": "Verzenden",
       "confirmation": "Bevestiging",
       "analyzing_messages": "Berichten analyseren",
-      "analyzing_transactions": "Transacties analyseren"
+      "analyzing_transactions": "Transacties analyseren",
+      "preparing_utxos": "UTXO's voorbereiden: {{current}}/{{total}} delen ({{percentage}}%)"
     },
     "receipt": {
       "sent": "✅ Ontvangstbevestiging verzonden!",
