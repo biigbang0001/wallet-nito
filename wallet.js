@@ -884,33 +884,43 @@ async function consolidateUtxos() {
     const originalWalletAddress = walletAddress;
     walletAddress = sourceAddress;
 
-    let currentUtxos = [...initialUtxos]; // Copie pour modification
+    let currentUtxos = [...initialUtxos];
     let stepCount = 1;
     let totalSuccess = 0;
     let lastTxid = null;
+    let processedUtxoIds = new Set();
     let consecutiveIdenticalScans = 0;
-    const MAX_IDENTICAL_SCANS = 3; // Limite pour éviter boucle infinie
+    let processedUtxos = 0;
+    const MAX_IDENTICAL_SCANS = 3;
 
     try {
       // Boucle pour traiter tous les batches
       while (currentUtxos.length > 1 && stepCount <= 50) {
         console.log(`🔄 Étape ${stepCount} - UTXOs restants: ${currentUtxos.length}`);
 
-        // ✅ NOUVELLE LOGIQUE: Si on a 2 UTXOs depuis plusieurs scans → Terminer
-        if (currentUtxos.length === 2 && consecutiveIdenticalScans >= MAX_IDENTICAL_SCANS) {
-          console.log(`🎯 CONSOLIDATION RÉUSSIE: 2 UTXOs restants après ${consecutiveIdenticalScans} scans identiques`);
-          console.log(`📋 UTXO 1: ${currentUtxos[0].txid} (${currentUtxos[0].amount} NITO)`);
-          console.log(`📋 UTXO 2: ${currentUtxos[1].txid} (${currentUtxos[1].amount} NITO)`);
-          break;
+        // Filtrer les UTXOs non traités
+        const availableUtxos = currentUtxos.filter(utxo => !processedUtxoIds.has(`${utxo.txid}:${utxo.vout}`));
+        if (availableUtxos.length === 0) {
+          console.log('🎯 Tous les UTXOs traités, scan pour nouveaux');
+          await new Promise(resolve => setTimeout(resolve, 10000)); // Attendre 10s pour sync
+          currentUtxos = await utxos(sourceAddress);
+          if (lastTxid) {
+            const confirmed = await checkTransactionConfirmation(lastTxid);
+            if (confirmed) {
+              console.log(`✅ Transaction ${lastTxid} confirmée, arrêt de la consolidation`);
+              break; // Sortir si la transaction est confirmée
+            }
+          }
+          continue;
         }
 
-        // Prendre le prochain batch d'UTXOs
-        const batchUtxos = currentUtxos.slice(0, Math.min(MAX_UTXOS_PER_BATCH, currentUtxos.length));
+        const batchUtxos = availableUtxos.slice(0, Math.min(MAX_UTXOS_PER_BATCH, availableUtxos.length));
 
         // Calculer le montant total du batch
         let batchTotal = 0;
         for (const u of batchUtxos) {
           batchTotal += Math.round(u.amount * 1e8);
+          processedUtxoIds.add(`${u.txid}:${u.vout}`); // Marquer comme traité
         }
 
         const feeRate = DYNAMIC_FEE_RATE || MIN_FEE_RATE;
@@ -923,14 +933,13 @@ async function consolidateUtxos() {
 
         if (target < getDustThreshold('p2wpkh')) {
           console.log(`⚠️ Batch trop petit (${target / 1e8} NITO), on passe`);
-          currentUtxos = currentUtxos.slice(batchUtxos.length);
+          currentUtxos = currentUtxos.filter(utxo => !batchUtxos.includes(utxo));
           continue;
         }
 
         console.log(`🚀 Étape ${stepCount} - Consolidation: ${batchUtxos.length} UTXOs → 1 UTXO (${target / 1e8} NITO)`);
 
         try {
-          // Utiliser signTxBatch pour ce batch spécifique
           const hex = await signTxBatch(sourceAddress, target / 1e8, batchUtxos, true);
           const txid = await rpc('sendrawtransaction', [hex]);
 
@@ -938,47 +947,31 @@ async function consolidateUtxos() {
           totalSuccess++;
           lastTxid = txid;
 
-          // ✅ CORRECTION: Si c'est la même transaction que la précédente, on arrête
-          if (stepCount > 1 && txid === lastTxid) {
-            console.log(`🔄 Même TXID que l'étape précédente, consolidation terminée`);
+          // Attendre confirmation ou sync mempool
+          await new Promise(resolve => setTimeout(resolve, 10000));
+          const confirmed = await checkTransactionConfirmation(txid);
+          if (confirmed) {
+            console.log(`✅ Transaction ${txid} confirmée, arrêt de la consolidation`);
             break;
           }
 
-          console.log('🔄 Nouveau UTXO de change:', (target / 1e8).toFixed(8), 'NITO');
-
-          // Attendre plus longtemps pour la synchronisation blockchain
-          await new Promise(resolve => setTimeout(resolve, 5000));
-
-          // Recalculer les UTXOs
-          const previousUtxosCount = currentUtxos.length;
-          const previousUtxosSignature = currentUtxos.map(u => `${u.txid}:${u.vout}`).sort().join(',');
-
+          // Rescan des UTXOs
           currentUtxos = await utxos(sourceAddress);
-          const newUtxosSignature = currentUtxos.map(u => `${u.txid}:${u.vout}`).sort().join(',');
-
-          console.log(`📊 UTXOs: ${previousUtxosCount} → ${currentUtxos.length}`);
-
-          // ✅ NOUVELLE LOGIQUE: Détecter si les UTXOs n'ont pas changé
-          if (newUtxosSignature === previousUtxosSignature) {
-            consecutiveIdenticalScans++;
-            console.log(`⚠️ UTXOs identiques (scan ${consecutiveIdenticalScans}/${MAX_IDENTICAL_SCANS})`);
-          } else {
-            consecutiveIdenticalScans = 0; // Reset si changement détecté
-          }
+          console.log(`📊 UTXOs: ${currentUtxos.length}`);
 
         } catch (error) {
           if (error.message.includes('txn-mempool-conflict')) {
-            console.log(`⚠️ Conflit mempool étape ${stepCount}, attente 5s...`);
-            await new Promise(resolve => setTimeout(resolve, 5000));
+            console.log(`⚠️ Conflit mempool étape ${stepCount}, attente 15s...`);
+            await new Promise(resolve => setTimeout(resolve, 15000));
             currentUtxos = await utxos(sourceAddress);
-            continue; // Retry la même étape
+            continue;
           } else if (error.message.includes('Transaction already in block chain')) {
             console.log(`✅ Transaction déjà confirmée à l'étape ${stepCount}`);
             totalSuccess++;
-            await new Promise(resolve => setTimeout(resolve, 3000));
             currentUtxos = await utxos(sourceAddress);
+            break;
           } else {
-            throw error; // Autre erreur, on arrête
+            throw error;
           }
         }
 
