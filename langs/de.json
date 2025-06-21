@@ -84,7 +84,8 @@
       "sending": "Senden",
       "confirmation": "Bestätigung",
       "analyzing_messages": "Nachrichten analysieren",
-      "analyzing_transactions": "Transaktionen analysieren"
+      "analyzing_transactions": "Transaktionen analysieren",
+      "preparing_utxos": "Vorbereitung der UTXOs: {{current}}/{{total}} Teile ({{percentage}}%)"
     },
     "receipt": {
       "sent": "✅ Empfangsbestätigung gesendet!",
