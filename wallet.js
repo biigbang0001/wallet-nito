@@ -155,34 +155,9 @@ async function updateCounterDisplay() {
 
 // NOUVELLE FONCTION: Filtrer les UTXOs avec OP_RETURN
 async function filterOpReturnUtxos(utxos) {
-  const filteredUtxos = [];
-  for (const utxo of utxos) {
-    try {
-      const tx = await rpc('getrawtransaction', [utxo.txid, true]);
-
-      // ✅ CORRECTION: Vérifier SEULEMENT l'output spécifique de l'UTXO
-      const specificOutput = tx.vout[utxo.vout];
-      if (!specificOutput) {
-        console.warn(`Output ${utxo.vout} non trouvé dans transaction ${utxo.txid}`);
-        continue;
-      }
-
-      const hasOpReturn = specificOutput.scriptPubKey &&
-                         specificOutput.scriptPubKey.hex &&
-                         specificOutput.scriptPubKey.hex.startsWith('6a');
-
-      if (!hasOpReturn) {
-        filteredUtxos.push(utxo);
-        console.log(`✅ UTXO ${utxo.txid}:${utxo.vout} - Pas d'OP_RETURN sur cet output`);
-      } else {
-        console.log(`❌ UTXO ${utxo.txid}:${utxo.vout} - Contient OP_RETURN, exclu`);
-      }
-    } catch (e) {
-      // Si erreur de lecture, on ne peut pas vérifier, donc on exclut
-      console.warn(`Impossible de vérifier UTXO ${utxo.txid}:${utxo.vout}, exclusion`);
-    }
-  }
-  console.log(`UTXOs filtrés: ${filteredUtxos.length}/${utxos.length} (exclus OP_RETURN)`);
+  // Filtrage simple par montant minimum pour éviter les UTXOs de messaging
+  const filteredUtxos = utxos.filter(utxo => utxo.amount >= 0.001);
+  console.log(`UTXOs filtrés: ${filteredUtxos.length}/${utxos.length} (minimum 0.001 NITO)`);
   return filteredUtxos;
 }
 
@@ -1412,6 +1387,56 @@ window.addEventListener('load', async () => {
           existingButton.onclick = () => consolidateUtxos();
           console.log('Consolidate button already present, event attached');
         }
+
+        // Ajouter la fonctionnalité MAX
+        const maxButton = $('maxButton');
+        if (maxButton) {
+          maxButton.onclick = async () => {
+            const dest = $('destinationAddress').value.trim();
+            if (!dest) return alert(i18next.t('errors.enter_destination_first'));
+
+            try {
+              showLoadingSpinner();
+              const ins = await utxos(bech32Address);
+              const workingIns = await filterOpReturnUtxos(ins);
+              if (!workingIns.length) {
+                hideLoadingSpinner();
+                return alert(i18next.t('errors.no_utxo_available_max'));
+              }
+
+              // Trier par montant décroissant et limiter à 15 UTXOs max pour optimiser
+              workingIns.sort((a, b) => b.amount - a.amount);
+              const selectedIns = workingIns.slice(0, 15);
+
+              let total = selectedIns.reduce((sum, u) => sum + Math.round(u.amount * 1e8), 0);
+
+              const feeRate = DYNAMIC_FEE_RATE || MIN_FEE_RATE;
+              const fees = Math.max(
+                Math.round((selectedIns.length * 150 + 50) * (feeRate * 1e8) / 1000),
+                Math.round(MIN_CONSOLIDATION_FEE * 1e8)
+              );
+
+              const maxAmount = (total - fees) / 1e8;
+              hideLoadingSpinner();
+
+              if (maxAmount <= 0) {
+                return alert(i18next.t('errors.max_insufficient_amount'));
+              }
+
+              $('amountNito').value = maxAmount.toFixed(8);
+              $('feeNito').value = (fees / 1e8).toFixed(8);
+
+              alert(i18next.t('max_button.info', {
+                amount: maxAmount.toFixed(8),
+                fees: (fees / 1e8).toFixed(8),
+                utxos: selectedIns.length
+              }));
+            } catch (e) {
+              hideLoadingSpinner();
+              alert(`Erreur: ${e.message}`);
+            }
+          };
+        }
       } catch (e) {
         alert(i18next.t('errors.import_error', { message: e.message }));
         console.error('Import error:', e);
@@ -1472,6 +1497,12 @@ window.addEventListener('load', async () => {
             walletAddress = sourceType === 'legacy' ? legacyAddress : sourceType === 'p2sh' ? p2shAddress : bech32Address;
             hex = await signTxWithPSBT(dest, amt);
           }
+
+          // Calculer les vrais frais de la transaction préparée
+          const txSize = hex.length / 2;
+          const feeRate = DYNAMIC_FEE_RATE || MIN_FEE_RATE;
+          const realFees = Math.max(txSize * feeRate, MIN_CONSOLIDATION_FEE);
+          $('feeNito').value = realFees.toFixed(8);
 
           hideLoadingSpinner();
           $('signedTx').textContent = hex;
