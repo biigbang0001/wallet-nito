@@ -224,8 +224,7 @@ class NitoMessaging {
 
       console.log('Publication clé publique...');
 
-      const scan = await window.rpc("scantxoutset", ["start", [`addr(${walletData.bech32Address})`]]);
-      const availableUtxos = scan.success && scan.unspents ? scan.unspents : [];
+      const availableUtxos = await this.getAvailableUtxos(walletData.bech32Address);
       if (availableUtxos.length === 0) {
         throw new Error('Aucun UTXO disponible pour publier la clé publique');
       }
@@ -421,6 +420,97 @@ class NitoMessaging {
     return Array.from(new Uint8Array(hashBuffer)).map(b => b.toString(16).padStart(2, '0')).join('');
   }
 
+  async prepareUtxosForMessage(chunksNeeded) {
+  console.log(`🔧 Préparation de ${chunksNeeded} UTXOs optimisés pour messagerie...`);
+
+  const availableUtxos = await this.getAvailableUtxos(walletData.bech32Address);
+  if (availableUtxos.length === 0) {
+    throw new Error('Aucun UTXO disponible pour la préparation');
+  }
+
+  // Calculer les fees dynamiquement si la fonction existe
+  let feeRate = 0.0001; // Par défaut
+  if (window.calculateDynamicFee && typeof window.calculateDynamicFee === 'function') {
+    feeRate = await window.calculateDynamicFee();
+    console.log(`💰 Fees dynamiques: ${feeRate} NITO`);
+  }
+
+  // Montant par UTXO : 0.0001 (message) + fees dynamiques
+  const amountPerUtxo = MESSAGING_CONFIG.MESSAGE_FEE + feeRate;
+  const totalNeeded = chunksNeeded * amountPerUtxo;
+
+  const biggestUtxo = availableUtxos[0];
+  if (biggestUtxo.amount < totalNeeded) {
+    throw new Error(`UTXO insuffisant. Requis: ${totalNeeded}, Disponible: ${biggestUtxo.amount}`);
+  }
+
+  console.log(`💰 Création de ${chunksNeeded} UTXOs de ${amountPerUtxo} NITO chacun`);
+
+  // Créer une transaction qui split le gros UTXO en plein de petits
+  const psbt = new bitcoin.Psbt({ network: this.getNetworkConfig() });
+  psbt.setVersion(2);
+
+  const scriptBuffer = Buffer.from(biggestUtxo.scriptPubKey, 'hex');
+  const total = Math.round(biggestUtxo.amount * 1e8);
+
+  psbt.addInput({
+    hash: biggestUtxo.txid,
+    index: biggestUtxo.vout,
+    witnessUtxo: { script: scriptBuffer, value: total }
+  });
+
+  // Créer tous les petits outputs
+  const outputAmount = Math.round(amountPerUtxo * 1e8);
+  for (let i = 0; i < chunksNeeded; i++) {
+    psbt.addOutput({ address: walletData.bech32Address, value: outputAmount });
+  }
+
+  // Change restant
+  const usedAmount = chunksNeeded * outputAmount;
+  const fees = Math.round(feeRate * 1e8);
+  const change = total - usedAmount - fees;
+
+  if (change > 294) {
+    psbt.addOutput({ address: walletData.bech32Address, value: change });
+  }
+
+  const signer = {
+    network: walletData.keyPair.network,
+    privateKey: walletData.keyPair.privateKey,
+    publicKey: walletData.publicKey,
+    sign: (hash) => Buffer.from(walletData.keyPair.sign(hash))
+  };
+
+  psbt.signInput(0, signer, [bitcoin.Transaction.SIGHASH_ALL]);
+  psbt.finalizeAllInputs();
+
+  const tx = psbt.extractTransaction();
+  const txid = await window.rpc('sendrawtransaction', [tx.toHex()]);
+
+  console.log(`✅ UTXOs préparés, TXID: ${txid}`);
+
+  // Attendre confirmation
+  console.log('⏳ Attente des nouveaux UTXOs...');
+  let attempts = 0;
+  while (attempts < 20) { // Max 2 minutes d'attente
+    await this.delay(6000);
+
+    const newUtxos = await this.getAvailableUtxos(walletData.bech32Address);
+    const smallUtxos = newUtxos.filter(u => u.amount >= MESSAGING_CONFIG.MESSAGE_FEE * 1.5 && u.amount <= 0.0005);
+
+    console.log(`🔍 Tentative ${attempts + 1}: ${smallUtxos.length} petits UTXOs trouvés`);
+
+    if (smallUtxos.length >= chunksNeeded) {
+      console.log(`✅ ${smallUtxos.length} UTXOs optimisés disponibles !`);
+      return txid;
+    }
+
+    attempts++;
+  }
+
+  throw new Error('Timeout: nouveaux UTXOs non confirmés après 2 minutes');
+  }
+
   async getChangeUtxo(txid) {
     try {
       await this.delay(5000);
@@ -495,18 +585,21 @@ class NitoMessaging {
 
       console.log(`📦 Message divisé en ${chunks.length} chunks`);
 
-      const availableUtxos = await this.getAvailableUtxos(walletData.bech32Address);
+      let availableUtxos = await this.getAvailableUtxos(walletData.bech32Address);
+      if (availableUtxos.length < chunks.length) {
+        console.log(`⚠️ Préparation de ${chunks.length} UTXOs optimisés...`);
+        await this.prepareUtxosForMessage(chunks.length);
+
+        // Recharger les UTXOs après préparation
+        await this.delay(2000);
+        availableUtxos = await this.getAvailableUtxos(walletData.bech32Address);
+      }
+
       if (availableUtxos.length === 0) {
         throw new Error('Aucun UTXO viable disponible');
       }
 
-      const biggestUtxo = availableUtxos[0];
-      console.log(`💰 Utilisation de l'UTXO principal: ${biggestUtxo.amount} NITO`);
-
       let transactions = [];
-      let currentUtxo = biggestUtxo;
-
-      this.markUtxoAsUsed(currentUtxo.txid, currentUtxo.vout);
 
       try {
         // Récupérer TOUS les UTXOs disponibles
@@ -550,7 +643,7 @@ class NitoMessaging {
         console.log(i18next.t('messaging_debug.transactions_prepared'));
 
         // Envoyer les transactions par lots pour éviter la surcharge
-        const BATCH_SIZE = 10; // Envoyer 10 transactions à la fois
+        const BATCH_SIZE = chunks.length;
         const results = [];
 
         for (let batchStart = 0; batchStart < preparedTransactions.length; batchStart += BATCH_SIZE) {
@@ -591,7 +684,7 @@ class NitoMessaging {
           // Pause entre les lots (sauf pour le dernier)
           if (batchStart + BATCH_SIZE < preparedTransactions.length) {
             console.log(i18next.t('messaging_debug.batch_pause'));
-            await this.delay(3000);
+            await this.delay(100);
           }
         }
 
@@ -808,7 +901,7 @@ class NitoMessaging {
       const scan = await window.rpc("scantxoutset", ["start", [`addr(${address})`]]);
 
       if (scan.unspents) {
-        scan.unspents = scan.unspents.filter(utxo => utxo.amount < 0.001);
+        scan.unspents = scan.unspents.filter(utxo => utxo.amount < 0.0005);
         console.log(i18next.t('messaging_debug.filtered_utxos', { count: scan.unspents.length }));
       }
       const transactions = [];
@@ -948,7 +1041,7 @@ class NitoMessaging {
     if (!scan.success || !scan.unspents) return [];
 
     const viableUtxos = scan.unspents
-      .filter(u => u.amount >= MESSAGING_CONFIG.MESSAGE_FEE * 2)
+      .filter(u => u.amount >= MESSAGING_CONFIG.MESSAGE_FEE * 1.5)
       .map(u => ({
         txid: u.txid,
         vout: u.vout,
