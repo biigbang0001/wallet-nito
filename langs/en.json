@@ -84,8 +84,7 @@
       "sending": "Sending",
       "confirmation": "Confirmation",
       "analyzing_messages": "Analyzing Messages",
-      "analyzing_transactions": "Analyzing Transactions",
-      "preparing_utxos": "Preparing UTXOs: {{current}}/{{total}} chunks ({{percentage}}%)"
+      "analyzing_transactions": "Analyzing Transactions"
     },
     "receipt": {
       "sent": "✅ Receipt Sent!",
@@ -205,7 +204,8 @@
     "preparing": "Preparing",
     "sending": "Sending",
     "analyzing_messages": "Analyzing Messages",
-    "transactions": "transactions"
+    "transactions": "transactions",
+    "preparing_utxos": "Preparing UTXOs: {{current}}/{{total}} chunks ({{percentage}}%)"
   },
   "consolidation_progress": "Consolidating {{count}} UTXOs to {{address}}",
   "consolidation_multiple_batches": "Will be done in {{count}} automatic transactions",
