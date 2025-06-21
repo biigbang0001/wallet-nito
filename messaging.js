@@ -514,9 +514,9 @@ class NitoMessaging {
 
   console.log('⏳ Attente des nouveaux UTXOs...');
 
-  const MAX_WAIT_TIME = 3600000; // 60 minutes max (pour congestion)
-  const CHECK_INTERVAL = 6000;   // Vérifier toutes les 6 secondes
-  const EXPECTED_BLOCK_TIME = 60000; // 60 secondes normalement
+  const MAX_WAIT_TIME = 3600000;
+  const CHECK_INTERVAL = 6000;
+  const EXPECTED_BLOCK_TIME = 90000;
 
   let elapsedTime = 0;
   let found = false;
@@ -526,7 +526,7 @@ class NitoMessaging {
     const progressBasedOnTime = Math.min(100, (elapsedTime / EXPECTED_BLOCK_TIME) * 100);
 
     // Mettre à jour l'affichage avec le pourcentage animé
-    this.updateProgressIndicator(0, 1, `Préparation des UTXOs (${Math.round(progressBasedOnTime)}%)`);
+    this.updateProgressIndicator(0, 1, i18next.t('progress_indicators.preparing_utxos_percentage', { percentage: Math.round(progressBasedOnTime) }));
 
     console.log(`🔍 Attente ${Math.round(elapsedTime/1000)}s - Progression: ${Math.round(progressBasedOnTime)}%`);
 
@@ -544,7 +544,7 @@ class NitoMessaging {
       console.log(`✅ ${smallUtxos.length} UTXOs optimisés disponibles !`);
       found = true;
       // Afficher 100% une fois trouvé
-      this.updateProgressIndicator(1, 1, 'Préparation terminée');
+      this.updateProgressIndicator(1, 1, i18next.t('progress_indicators.preparation_complete'));
       await this.delay(1000); // Laisser voir le 100%
       return txid;
     }
