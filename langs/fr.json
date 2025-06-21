@@ -205,7 +205,9 @@
     "sending": "Envoi",
     "analyzing_messages": "Analyse des messages",
     "transactions": "transactions",
-    "preparing_utxos": "Préparation des UTXOs : {{current}}/{{total}} fragments ({{percentage}}%)"
+    "preparing_utxos": "Préparation des UTXOs : {{current}}/{{total}} fragments ({{percentage}}%)",
+    "preparing_utxos_percentage": "Préparation des UTXOs ({{percentage}}%)",
+    "preparation_complete": "Préparation terminée"
   },
   "consolidation_progress": "Consolidation de {{count}} UTXOs vers {{address}}",
   "consolidation_multiple_batches": "Sera fait en {{count}} transactions automatiques",
