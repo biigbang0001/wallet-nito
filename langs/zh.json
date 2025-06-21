@@ -84,8 +84,7 @@
       "sending": "发送中",
       "confirmation": "确认",
       "analyzing_messages": "分析消息",
-      "analyzing_transactions": "分析交易",
-      "preparing_utxos": "准备 UTXO：{{current}}/{{total}} 片段 ({{percentage}}%)"
+      "analyzing_transactions": "分析交易"
     },
     "receipt": {
       "sent": "✅ 回执已发送！",
@@ -205,7 +204,8 @@
     "preparing": "准备中",
     "sending": "发送中",
     "analyzing_messages": "分析消息",
-    "transactions": "交易"
+    "transactions": "交易",
+    "preparing_utxos": "准备 UTXO：{{current}}/{{total}} 片段 ({{percentage}}%)"
   },
   "consolidation_progress": "正在合并 {{count}} 个 UTXO 到 {{address}}",
   "consolidation_multiple_batches": "将在 {{count}} 笔自动交易中完成",
