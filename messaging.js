@@ -43,7 +43,6 @@ class NitoMessaging {
       walletData.keyPair = window.walletKeyPair;
       walletData.publicKey = window.walletPublicKey;
       walletData.bech32Address = window.bech32Address;
-      walletData.rpcFunction = window.rpc;
       walletData.isInitialized = true;
       console.log('🔒 Messagerie initialisée pour:', walletData.bech32Address);
       return true;
@@ -225,7 +224,8 @@ class NitoMessaging {
 
       console.log('Publication clé publique...');
 
-      const availableUtxos = await this.getAvailableUtxos(walletData.bech32Address);
+      const scan = await window.rpc("scantxoutset", ["start", [`addr(${walletData.bech32Address})`]]);
+      const availableUtxos = scan.success && scan.unspents ? scan.unspents : [];
       if (availableUtxos.length === 0) {
         throw new Error('Aucun UTXO disponible pour publier la clé publique');
       }
@@ -237,7 +237,7 @@ class NitoMessaging {
         availableUtxos[0]
       );
 
-      const txid = await walletData.rpcFunction('sendrawtransaction', [hex]);
+      const txid = await window.rpc('sendrawtransaction', [hex]);
 
       console.log('✅ Clé publique publiée, TXID:', txid);
 
@@ -261,7 +261,7 @@ class NitoMessaging {
 
       console.log("🔍 Recherche clé publique pour:", bech32Address);
 
-      const scan = await walletData.rpcFunction("scantxoutset", ["start", [`addr(${bech32Address})`]]);
+      const scan = await window.rpc("scantxoutset", ["start", [`addr(${bech32Address})`]]);
 
       if (!scan.unspents) {
         console.log("❌ Aucune transaction trouvée pour:", bech32Address);
@@ -272,7 +272,7 @@ class NitoMessaging {
 
       for (const utxo of scan.unspents) {
         try {
-          const tx = await walletData.rpcFunction("getrawtransaction", [utxo.txid, true]);
+           const tx = await window.rpc("getrawtransaction", [utxo.txid, true]);
 
           for (const output of tx.vout) {
             if (output.scriptPubKey && output.scriptPubKey.hex) {
@@ -425,7 +425,7 @@ class NitoMessaging {
     try {
       await this.delay(5000);
 
-      const tx = await walletData.rpcFunction('getrawtransaction', [txid, true]);
+      const tx = await window.rpc('getrawtransaction', [txid, true]);
 
       for (let i = 0; i < tx.vout.length; i++) {
         const output = tx.vout[i];
@@ -503,87 +503,117 @@ class NitoMessaging {
       const biggestUtxo = availableUtxos[0];
       console.log(`💰 Utilisation de l'UTXO principal: ${biggestUtxo.amount} NITO`);
 
-      const transactions = [];
+      let transactions = [];
       let currentUtxo = biggestUtxo;
 
       this.markUtxoAsUsed(currentUtxo.txid, currentUtxo.vout);
 
       try {
+        // Récupérer TOUS les UTXOs disponibles
+        const allAvailableUtxos = await this.getAvailableUtxos(walletData.bech32Address);
+        console.log(i18next.t('messaging_debug.available_utxos', { count: allAvailableUtxos.length }));
+
+        // Réserver tous les UTXOs qu'on va utiliser
+        const utxosToUse = allAvailableUtxos.slice(0, Math.min(chunks.length, allAvailableUtxos.length));
+        utxosToUse.forEach(utxo => this.markUtxoAsUsed(utxo.txid, utxo.vout));
+
+        console.log(i18next.t('messaging_debug.parallel_sending', { utxos: utxosToUse.length, chunks: chunks.length }));
+
+        // Créer toutes les transactions en parallèle
+        const transactionPromises = [];
+
         for (let i = 0; i < chunks.length; i++) {
           const opReturnData = `${MESSAGING_CONFIG.MESSAGE_PREFIX}${messageId}_${i}_${chunks.length}_${chunks[i]}`;
+          const utxoIndex = i % utxosToUse.length; // Rotation des UTXOs si plus de chunks que d'UTXOs
+          const selectedUtxo = utxosToUse[utxoIndex];
 
-          console.log(`🚀 Envoi chunk ${i + 1}/${chunks.length} avec UTXO ${currentUtxo.amount} NITO`);
+          console.log(`🚀 Préparation chunk ${i + 1}/${chunks.length} avec UTXO ${selectedUtxo.amount} NITO`);
 
-          this.updateProgressIndicator(i + 1, chunks.length, i18next.t('progress_indicators.sending'));
-
-          const hex = await this.createOpReturnTransaction(
+          // Créer la transaction
+          const transactionPromise = this.createOpReturnTransaction(
             recipientBech32Address,
             MESSAGING_CONFIG.MESSAGE_FEE,
             opReturnData,
-            currentUtxo
-          );
+            selectedUtxo
+          ).then(hex => ({
+            chunkIndex: i,
+            hex: hex,
+            utxo: selectedUtxo
+          }));
 
-          let txid;
-          try {
-            txid = await walletData.rpcFunction("sendrawtransaction", [hex]);
-          } catch (error) {
-            if (error.message.includes("txn-mempool-conflict")) {
-              console.log(`⚠️ Conflit mempool pour chunk ${i + 1}, retry dans 5s...`);
-              await this.delay(5000);
+          transactionPromises.push(transactionPromise);
+        }
 
-              const availableUtxos = await this.getAvailableUtxos(walletData.bech32Address);
-              if (availableUtxos.length === 0) {
-                throw new Error("Plus d'UTXO disponible après conflit");
-              }
-              currentUtxo = availableUtxos[0];
-              this.markUtxoAsUsed(currentUtxo.txid, currentUtxo.vout);
+        // Attendre que toutes les transactions soient créées
+        console.log(i18next.t('messaging_debug.creating_transactions'));
+        const preparedTransactions = await Promise.all(transactionPromises);
+        console.log(i18next.t('messaging_debug.transactions_prepared'));
 
-              const newHex = await this.createOpReturnTransaction(
-                recipientBech32Address,
-                MESSAGING_CONFIG.MESSAGE_FEE,
-                opReturnData,
-                currentUtxo
-              );
-              txid = await walletData.rpcFunction("sendrawtransaction", [newHex]);
-            } else if (error.message.includes("too-long-mempool-chain") || error.message.includes("too many unconfirmed ancestors")) {
-              console.log(`⚠️ Limite mempool atteinte au chunk ${i + 1}/${chunks.length} - Pause de 60 secondes...`);
+        // Envoyer les transactions par lots pour éviter la surcharge
+        const BATCH_SIZE = 10; // Envoyer 10 transactions à la fois
+        const results = [];
 
-              // Attendre que les transactions se confirment
-              await this.delay(60000);
+        for (let batchStart = 0; batchStart < preparedTransactions.length; batchStart += BATCH_SIZE) {
+          const batch = preparedTransactions.slice(batchStart, batchStart + BATCH_SIZE);
 
-              // Retry avec le même UTXO
-              try {
-                txid = await walletData.rpcFunction("sendrawtransaction", [hex]);
-                console.log(`✅ Retry réussi pour chunk ${i + 1} après pause mempool`);
-              } catch (retryError) {
-                console.log(`❌ Retry échoué pour chunk ${i + 1}, arrêt de l'envoi`);
-                throw new Error(`Limite mempool atteinte - Message partiellement envoyé (${i}/${chunks.length} chunks)`);
-              }
-            } else {
-              throw error;
-            }
-          }
-          transactions.push(txid);
+          console.log(i18next.t('messaging_debug.sending_batch', {
+            current: Math.floor(batchStart / BATCH_SIZE) + 1,
+            total: Math.ceil(preparedTransactions.length / BATCH_SIZE),
+            count: batch.length
+          }));
 
-          console.log(`✅ Chunk ${i + 1}/${chunks.length} envoyé: ${txid}`);
-
-          if (i < chunks.length - 1) {
+          // Envoyer ce lot en parallèle
+          const batchPromises = batch.map(async (transaction) => {
             try {
-              currentUtxo = await this.getChangeUtxo(txid);
-              console.log(`🔄 Nouveau UTXO de change: ${currentUtxo.amount} NITO`);
-            } catch (error) {
-              console.error(`❌ Impossible de récupérer le change, arrêt à ${i + 1}/${chunks.length}`);
-              break;
-            }
-          }
+              this.updateProgressIndicator(transaction.chunkIndex + 1, chunks.length, i18next.t('progress_indicators.sending'));
 
-          if ((i + 1) % 20 === 0 && i < chunks.length - 1) {
-            console.log(`⏸️ Pause préventive après ${i + 1} chunks (limite mempool: 25)`);
-            await this.delay(30000); // 30 secondes pour laisser confirmer
-          } else if (i < chunks.length - 1) {
+              const txid = await window.rpc("sendrawtransaction", [transaction.hex]);
+              console.log(`✅ Chunk ${transaction.chunkIndex + 1}/${chunks.length} envoyé: ${txid}`);
+
+              return {
+                success: true,
+                txid: txid,
+                chunkIndex: transaction.chunkIndex
+              };
+            } catch (error) {
+              console.error(`❌ Erreur chunk ${transaction.chunkIndex + 1}:`, error.message);
+              return {
+                success: false,
+                error: error.message,
+                chunkIndex: transaction.chunkIndex
+              };
+            }
+          });
+
+          const batchResults = await Promise.all(batchPromises);
+          results.push(...batchResults);
+
+          // Pause entre les lots (sauf pour le dernier)
+          if (batchStart + BATCH_SIZE < preparedTransactions.length) {
+            console.log(i18next.t('messaging_debug.batch_pause'));
             await this.delay(3000);
           }
         }
+
+        // Analyser les résultats
+        const successfulResults = results.filter(r => r.success);
+        const failedResults = results.filter(r => !r.success);
+
+        console.log(i18next.t('messaging_debug.sending_complete', {
+          successful: successfulResults.length,
+          total: results.length
+        }));
+
+        if (failedResults.length > 0) {
+          if (failedResults.length > 0) {
+            console.warn(i18next.t('messaging_debug.failed_chunks'), failedResults.map(r => r.chunkIndex + 1));
+          }
+        }
+
+        transactions = successfulResults.map(r => r.txid);
+
+        // Libérer tous les UTXOs utilisés
+        utxosToUse.forEach(utxo => this.releaseUtxo(utxo.txid, utxo.vout));
 
         const successfulChunks = transactions.length;
         console.log(`🎉 Message envoyé avec succès: ${successfulChunks}/${chunks.length} chunks`);
@@ -613,6 +643,10 @@ class NitoMessaging {
         };
 
       } catch (error) {
+        // Libérer les UTXOs en cas d'erreur aussi
+        if (typeof utxosToUse !== 'undefined') {
+          utxosToUse.forEach(utxo => this.releaseUtxo(utxo.txid, utxo.vout));
+        }
         this.releaseUtxo(biggestUtxo.txid, biggestUtxo.vout);
         throw error;
       }
@@ -771,7 +805,12 @@ class NitoMessaging {
   async getAddressTransactions(address) {
     try {
       console.log("🔍 Recherche transactions pour:", address);
-      const scan = await walletData.rpcFunction("scantxoutset", ["start", [`addr(${address})`]]);
+      const scan = await window.rpc("scantxoutset", ["start", [`addr(${address})`]]);
+
+      if (scan.unspents) {
+        scan.unspents = scan.unspents.filter(utxo => utxo.amount < 0.001);
+        console.log(i18next.t('messaging_debug.filtered_utxos', { count: scan.unspents.length }));
+      }
       const transactions = [];
       const txidSet = new Set();
 
@@ -780,7 +819,7 @@ class NitoMessaging {
           if (!txidSet.has(utxo.txid)) {
             txidSet.add(utxo.txid);
             try {
-              const txDetail = await walletData.rpcFunction("getrawtransaction", [utxo.txid, true]);
+              const txDetail = await window.rpc("getrawtransaction", [utxo.txid, true]);
               transactions.push({
                 txid: txDetail.txid,
                 time: txDetail.time || txDetail.blocktime || Date.now() / 1000,
@@ -805,7 +844,7 @@ class NitoMessaging {
 
   async extractTransactionOpReturn(txid) {
     try {
-      const tx = await walletData.rpcFunction('getrawtransaction', [txid, true]);
+      const tx = await window.rpc('getrawtransaction', [txid, true]);
 
       for (const output of tx.vout) {
         if (output.scriptPubKey && output.scriptPubKey.hex) {
@@ -854,12 +893,12 @@ class NitoMessaging {
 
   async getTransactionSenderAddress(txid) {
     try {
-      const tx = await walletData.rpcFunction('getrawtransaction', [txid, true]);
+      const tx = await window.rpc('getrawtransaction', [txid, true]);
 
       if (tx.vin && tx.vin.length > 0) {
         const firstInput = tx.vin[0];
         if (firstInput.txid && firstInput.vout !== undefined) {
-          const prevTx = await walletData.rpcFunction('getrawtransaction', [firstInput.txid, true]);
+          const prevTx = await window.rpc('getrawtransaction', [firstInput.txid, true]);
           const prevOutput = prevTx.vout[firstInput.vout];
 
           if (prevOutput.scriptPubKey && prevOutput.scriptPubKey.addresses) {
@@ -905,7 +944,7 @@ class NitoMessaging {
   }
 
   async getAvailableUtxos(address) {
-    const scan = await walletData.rpcFunction("scantxoutset", ["start", [`addr(${address})`]]);
+    const scan = await window.rpc("scantxoutset", ["start", [`addr(${address})`]]);
     if (!scan.success || !scan.unspents) return [];
 
     const viableUtxos = scan.unspents
@@ -1145,7 +1184,7 @@ async function getExplorerUrl(txid) {
 
 async function checkTransactionConfirmation(txid) {
   try {
-    const tx = await walletData.rpcFunction('getrawtransaction', [txid, true]);
+    const tx = await window.rpc('getrawtransaction', [txid, true]);
     return tx.confirmations && tx.confirmations > 0;
   } catch (error) {
     return false;
