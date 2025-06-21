@@ -49,8 +49,8 @@
     "copy_tx": "📋 Copier"
   },
   "max_button": {
-  "text": "MAX",
-  "info": "💰 MAX: {{amount}} NITO\n⚡ Frais: {{fees}} NITO\n📦 UTXOs: {{utxos}}"
+    "text": "MAX",
+    "info": "💰 MAX: {{amount}} NITO\n⚡ Frais: {{fees}} NITO\n📦 UTXOs: {{utxos}}"
   },
   "encrypted_messaging": {
     "title": "🔒 Messagerie cryptée",
@@ -204,7 +204,8 @@
     "preparing": "Préparation",
     "sending": "Envoi",
     "analyzing_messages": "Analyse des messages",
-    "transactions": "transactions"
+    "transactions": "transactions",
+    "preparing_utxos": "Préparation des UTXOs : {{current}}/{{total}} fragments ({{percentage}}%)"
   },
   "consolidation_progress": "Consolidation de {{count}} UTXOs vers {{address}}",
   "consolidation_multiple_batches": "Sera fait en {{count}} transactions automatiques",
