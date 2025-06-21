@@ -836,9 +836,6 @@ async function consolidateUtxos() {
 
     console.log('Initial UTXOs to consolidate:', initialUtxos.length);
 
-    // Calculer le nombre de batches nécessaires
-    const totalBatches = Math.ceil(initialUtxos.length / MAX_UTXOS_PER_BATCH);
-
     // Demander confirmation
     const confirm = await new Promise(resolve => {
       hideLoadingSpinner();
@@ -855,7 +852,7 @@ async function consolidateUtxos() {
       popup.style.color = body.classList.contains('dark-mode') ? '#e0e0e0' : '#1e3a8a';
       popup.innerHTML = DOMPurify.sanitize(`
         <p>${i18next.t('consolidation_progress', { count: initialUtxos.length, address: sourceAddress })}</p>
-        <p>${totalBatches > 1 ? i18next.t('consolidation_multiple_batches', { count: totalBatches }) : i18next.t('consolidation_single_transaction')}</p>
+        <p>Tous les UTXOs seront consolidés en un seul.</p>
         <button id="confirmConsolidate">Confirmer</button>
         <button id="cancelConsolidate">Annuler</button>
       `);
@@ -884,30 +881,34 @@ async function consolidateUtxos() {
     const originalWalletAddress = walletAddress;
     walletAddress = sourceAddress;
 
-    let currentUtxos = [...initialUtxos]; // Copie pour modification
+    let currentUtxos = [...initialUtxos];
     let stepCount = 1;
     let totalSuccess = 0;
     let lastTxid = null;
     let consecutiveIdenticalScans = 0;
-    const MAX_IDENTICAL_SCANS = 3; // Limite pour éviter boucle infinie
+    const MAX_IDENTICAL_SCANS = 3;
 
     try {
-      // Boucle pour traiter tous les batches
-      while (currentUtxos.length > 1 && stepCount <= 50) {
+      // Boucle pour traiter TOUS les UTXOs
+      while (currentUtxos.length > 1 && stepCount <= 10) {
         console.log(`🔄 Étape ${stepCount} - UTXOs restants: ${currentUtxos.length}`);
 
-        // ✅ NOUVELLE LOGIQUE: Si on a 2 UTXOs depuis plusieurs scans → Terminer
-        if (currentUtxos.length === 2 && consecutiveIdenticalScans >= MAX_IDENTICAL_SCANS) {
-          console.log(`🎯 CONSOLIDATION RÉUSSIE: 2 UTXOs restants après ${consecutiveIdenticalScans} scans identiques`);
-          console.log(`📋 UTXO 1: ${currentUtxos[0].txid} (${currentUtxos[0].amount} NITO)`);
-          console.log(`📋 UTXO 2: ${currentUtxos[1].txid} (${currentUtxos[1].amount} NITO)`);
+        // Si on a exactement 1 UTXO, on a terminé
+        if (currentUtxos.length === 1) {
+          console.log("🎯 CONSOLIDATION TERMINÉE : 1 seul UTXO restant");
           break;
         }
 
-        // Prendre le prochain batch d'UTXOs
-        const batchUtxos = currentUtxos.slice(0, Math.min(MAX_UTXOS_PER_BATCH, currentUtxos.length));
+        // Si on a 2 UTXOs depuis plusieurs scans → Terminer
+        if (currentUtxos.length === 2 && consecutiveIdenticalScans >= MAX_IDENTICAL_SCANS) {
+          console.log(`🎯 CONSOLIDATION RÉUSSIE: 2 UTXOs restants après ${consecutiveIdenticalScans} scans identiques`);
+          break;
+        }
 
-        // Calculer le montant total du batch
+        // Prendre TOUS les UTXOs restants
+        const batchUtxos = currentUtxos;
+
+        // Calculer le montant total
         let batchTotal = 0;
         for (const u of batchUtxos) {
           batchTotal += Math.round(u.amount * 1e8);
@@ -922,63 +923,51 @@ async function consolidateUtxos() {
         const target = batchTotal - batchFee;
 
         if (target < getDustThreshold('p2wpkh')) {
-          console.log(`⚠️ Batch trop petit (${target / 1e8} NITO), on passe`);
-          currentUtxos = currentUtxos.slice(batchUtxos.length);
-          continue;
+          console.log(`⚠️ Montant trop petit (${target / 1e8} NITO), consolidation terminée`);
+          break;
         }
 
         console.log(`🚀 Étape ${stepCount} - Consolidation: ${batchUtxos.length} UTXOs → 1 UTXO (${target / 1e8} NITO)`);
 
         try {
-          // Utiliser signTxBatch pour ce batch spécifique
-          const hex = await signTxBatch(sourceAddress, target / 1e8, batchUtxos, true);
+          // Utiliser signTx pour consolider TOUS les UTXOs d'un coup
+          const hex = await signTx(sourceAddress, target / 1e8, true);
           const txid = await rpc('sendrawtransaction', [hex]);
 
           console.log(`✅ Étape ${stepCount} réussie, TXID: ${txid}`);
           totalSuccess++;
           lastTxid = txid;
 
-          // ✅ CORRECTION: Si c'est la même transaction que la précédente, on arrête
-          if (stepCount > 1 && txid === lastTxid) {
-            console.log(`🔄 Même TXID que l'étape précédente, consolidation terminée`);
-            break;
-          }
-
-          console.log('🔄 Nouveau UTXO de change:', (target / 1e8).toFixed(8), 'NITO');
-
-          // Attendre plus longtemps pour la synchronisation blockchain
-          await new Promise(resolve => setTimeout(resolve, 5000));
+          // Attendre la confirmation
+          console.log('⏳ Attente confirmation (15 secondes)...');
+          await new Promise(resolve => setTimeout(resolve, 15000));
 
           // Recalculer les UTXOs
           const previousUtxosCount = currentUtxos.length;
-          const previousUtxosSignature = currentUtxos.map(u => `${u.txid}:${u.vout}`).sort().join(',');
-
           currentUtxos = await utxos(sourceAddress);
-          const newUtxosSignature = currentUtxos.map(u => `${u.txid}:${u.vout}`).sort().join(',');
-
           console.log(`📊 UTXOs: ${previousUtxosCount} → ${currentUtxos.length}`);
 
-          // ✅ NOUVELLE LOGIQUE: Détecter si les UTXOs n'ont pas changé
-          if (newUtxosSignature === previousUtxosSignature) {
-            consecutiveIdenticalScans++;
-            console.log(`⚠️ UTXOs identiques (scan ${consecutiveIdenticalScans}/${MAX_IDENTICAL_SCANS})`);
-          } else {
-            consecutiveIdenticalScans = 0; // Reset si changement détecté
+          // Si on a réussi à tout consolider, on sort
+          if (currentUtxos.length <= 1) {
+            console.log("🎯 CONSOLIDATION COMPLÈTE !");
+            break;
           }
+
+          consecutiveIdenticalScans = 0;
 
         } catch (error) {
           if (error.message.includes('txn-mempool-conflict')) {
-            console.log(`⚠️ Conflit mempool étape ${stepCount}, attente 5s...`);
-            await new Promise(resolve => setTimeout(resolve, 5000));
+            console.log(`⚠️ Conflit mempool étape ${stepCount}, attente 10s...`);
+            await new Promise(resolve => setTimeout(resolve, 10000));
             currentUtxos = await utxos(sourceAddress);
-            continue; // Retry la même étape
+            continue;
           } else if (error.message.includes('Transaction already in block chain')) {
             console.log(`✅ Transaction déjà confirmée à l'étape ${stepCount}`);
             totalSuccess++;
-            await new Promise(resolve => setTimeout(resolve, 3000));
+            await new Promise(resolve => setTimeout(resolve, 5000));
             currentUtxos = await utxos(sourceAddress);
           } else {
-            throw error; // Autre erreur, on arrête
+            throw error;
           }
         }
 
