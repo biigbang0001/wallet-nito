@@ -48,10 +48,14 @@
     "signed_tx": "Transaction signée (hex) :",
     "copy_tx": "📋 Copier"
   },
+  "max_button": {
+  "text": "MAX",
+  "info": "💰 MAX: {{amount}} NITO\n⚡ Frais: {{fees}} NITO\n📦 UTXOs: {{utxos}}"
+  },
   "encrypted_messaging": {
     "title": "🔒 Messagerie cryptée",
     "publish_pubkey": "🔑 Publier ma clé publique",
-    "publish_info": "Publiez votre clé publique une fois pour permettre aux autres de vous envoyer des messages cryptés. (Si Consolider UTXOs, veuillez republier votre clé publique pour envoyer/recevoir des messages)",
+    "publish_info": "Publiez votre clé publique une fois pour permettre d'envoyer/recevoir des messages. (Si Consolider UTXOs, veuillez republier votre clé publique pour envoyer/recevoir des messages)",
     "write_title": "✍️ Écrire un message",
     "message": "Message",
     "from": "De",
@@ -182,7 +186,10 @@
     "consolidation_bech32_only": "Consolidation disponible uniquement pour Bech32",
     "mnemonic_generation_error": "Erreur lors de la génération de la phrase mnémonique",
     "invalid_mnemonic": "Phrase mnémonique invalide",
-    "hd_import_error": "Erreur d'importation HD: {{message}}"
+    "hd_import_error": "Erreur d'importation HD: {{message}}",
+    "max_insufficient_amount": "Montant maximum insuffisant après déduction des frais",
+    "enter_destination_first": "Saisissez d'abord une adresse de destination",
+    "no_utxo_available_max": "Aucun UTXO disponible"
   },
   "copied": "Copié !",
   "success_messages": {
@@ -205,5 +212,16 @@
   "consolidation_final_completed": "✅ Consolidation terminée !\n{{transactions}} transaction(s) effectuée(s)\nUTXOs finaux: {{utxos}}",
   "consolidation_single_utxo_completed": "✅ Consolidation terminée - Un seul UTXO restant !",
   "consolidation_stopped": "⚠️ Consolidation arrêtée\nUTXOs restants: {{utxos}}",
-  "consolidation_already_done": "✅ Consolidation déjà effectuée !"
+  "consolidation_already_done": "✅ Consolidation déjà effectuée !",
+  "messaging_debug": {
+    "filtered_utxos": "🔍 UTXOs filtrés pour messages: {{count}} (< 0.001 NITO)",
+    "available_utxos": "💰 UTXOs disponibles: {{count}}",
+    "parallel_sending": "📦 Envoi en parallèle avec {{utxos}} UTXOs pour {{chunks}} chunks",
+    "creating_transactions": "🔧 Création de toutes les transactions...",
+    "transactions_prepared": "✅ Toutes les transactions préparées",
+    "sending_batch": "📤 Envoi du lot {{current}}/{{total}} ({{count}} transactions)",
+    "batch_pause": "⏸️ Pause de 3 secondes entre les lots...",
+    "sending_complete": "🎉 Envoi terminé: {{successful}}/{{total}} chunks réussis",
+    "failed_chunks": "❌ Chunks échoués:"
+  }
 }
