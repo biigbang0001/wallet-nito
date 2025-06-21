@@ -84,7 +84,8 @@
       "sending": "Отправка",
       "confirmation": "Подтверждение",
       "analyzing_messages": "Анализ сообщений",
-      "analyzing_transactions": "Анализ транзакций"
+      "analyzing_transactions": "Анализ транзакций",
+      "preparing_utxos": "Подготовка UTXO: {{current}}/{{total}} частей ({{percentage}}%)"
     },
     "receipt": {
       "sent": "✅ Квитанция отправлена!",
