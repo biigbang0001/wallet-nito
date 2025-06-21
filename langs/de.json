@@ -84,8 +84,7 @@
       "sending": "Senden",
       "confirmation": "Bestätigung",
       "analyzing_messages": "Nachrichten analysieren",
-      "analyzing_transactions": "Transaktionen analysieren",
-      "preparing_utxos": "Vorbereitung der UTXOs: {{current}}/{{total}} Teile ({{percentage}}%)"
+      "analyzing_transactions": "Transaktionen analysieren"
     },
     "receipt": {
       "sent": "✅ Empfangsbestätigung gesendet!",
@@ -205,7 +204,8 @@
     "preparing": "Vorbereitung",
     "sending": "Senden",
     "analyzing_messages": "Nachrichten analysieren",
-    "transactions": "Transaktionen"
+    "transactions": "Transaktionen",
+    "preparing_utxos": "Vorbereitung der UTXOs: {{current}}/{{total}} Teile ({{percentage}}%)"
   },
   "consolidation_progress": "Konsolidierung von {{count}} UTXOs nach {{address}}",
   "consolidation_multiple_batches": "Wird in {{count}} automatischen Transaktionen durchgeführt",
