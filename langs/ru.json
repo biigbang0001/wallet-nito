@@ -84,8 +84,7 @@
       "sending": "Отправка",
       "confirmation": "Подтверждение",
       "analyzing_messages": "Анализ сообщений",
-      "analyzing_transactions": "Анализ транзакций",
-      "preparing_utxos": "Подготовка UTXO: {{current}}/{{total}} частей ({{percentage}}%)"
+      "analyzing_transactions": "Анализ транзакций"
     },
     "receipt": {
       "sent": "✅ Квитанция отправлена!",
@@ -205,7 +204,8 @@
     "preparing": "Подготовка",
     "sending": "Отправка",
     "analyzing_messages": "Анализ сообщений",
-    "transactions": "транзакции"
+    "transactions": "транзакции",
+    "preparing_utxos": "Подготовка UTXO: {{current}}/{{total}} частей ({{percentage}}%)"
   },
   "consolidation_progress": "Консолидация {{count}} UTXO на {{address}}",
   "consolidation_multiple_batches": "Будет выполнено в {{count}} автоматических транзакциях",
