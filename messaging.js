@@ -600,7 +600,7 @@ class NitoMessaging {
       const percentage = Math.round((current / total) * 100);
       progressElement.innerHTML = `
         <div style="margin: 10px 0; padding: 15px; background: #f0f0f0; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
-          <div style="margin-bottom: 8px; font-weight: bold; color: #333;">${i18next.t('progress_indicators.preparing_utxos', { current, total, percentage })}</div>
+          <div style="margin-bottom: 8px; font-weight: bold; color: #333;">${action}: ${current}/${total} chunks (${percentage}%)</div>
           <div style="width: 100%; background: #ddd; border-radius: 10px; height: 20px; overflow: hidden;">
             <div style="width: ${percentage}%; background: linear-gradient(90deg, #4b5e40, #6b7e60); height: 20px; border-radius: 10px; transition: width 0.3s ease;"></div>
           </div>
