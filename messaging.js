@@ -3,7 +3,6 @@ import * as bitcoin from 'https://esm.sh/bitcoinjs-lib@6.1.5?bundle';
 import * as secp256k1 from 'https://esm.sh/@noble/secp256k1@2.1.0';
 
 const MESSAGING_CONFIG = {
-  MAX_MESSAGE_LENGTH: 5000,
   CHUNK_SIZE: 20,
   MESSAGE_PREFIX: 'N_',
   PUBKEY_PREFIX: 'NITO_PUB_',
@@ -428,12 +427,36 @@ class NitoMessaging {
     throw new Error('Aucun UTXO disponible pour la préparation');
   }
 
-  // Calculer les fees dynamiquement si la fonction existe
-  let feeRate = 0.0001; // Par défaut
+  // Calculer les fees exacts basés sur la taille de transaction
+  const estimatedInputs = 1; // Un input (le gros UTXO)
+  const estimatedOutputs = chunksNeeded + 1; // Tous les petits UTXOs + change
+  const estimatedTxSize = (estimatedInputs * 148) + (estimatedOutputs * 34) + 10; // Taille estimée en bytes
+
+  console.log(`📏 Transaction estimée: ${estimatedTxSize} bytes pour ${chunksNeeded} UTXOs`);
+
+  // Calculer fees dynamiques si disponible, sinon utiliser 1 sat/byte minimum
+  let satoshisPerByte = 1; // Minimum réseau
   if (window.calculateDynamicFee && typeof window.calculateDynamicFee === 'function') {
-    feeRate = await window.calculateDynamicFee();
-    console.log(`💰 Fees dynamiques: ${feeRate} NITO`);
+    try {
+      const dynamicFeeRate = await window.calculateDynamicFee();
+      satoshisPerByte = Math.max(1, Math.round(dynamicFeeRate * 1e8 / 250)); // Convertir en sat/byte
+      console.log(`💰 Fees dynamiques: ${satoshisPerByte} sat/byte`);
+    } catch (e) {
+      console.warn('⚠️ Erreur fees dynamiques, utilisation du minimum');
+    }
   }
+
+  // Calculer les fees exacts pour cette transaction
+  const exactFeesInSatoshis = estimatedTxSize * satoshisPerByte;
+  const exactFeesInNito = exactFeesInSatoshis / 1e8;
+
+  // S'assurer qu'on dépasse le minimum relay fee (11551 satoshis)
+  const minRelayFeeSatoshis = 11551;
+  const finalFeesInSatoshis = Math.max(exactFeesInSatoshis, minRelayFeeSatoshis);
+  const feeRate = finalFeesInSatoshis / 1e8;
+
+  console.log(`💰 Fees calculés: ${finalFeesInSatoshis} satoshis (${feeRate.toFixed(8)} NITO)`);
+  console.log(`✅ Fees minimum relay: ${minRelayFeeSatoshis} satoshis - ${finalFeesInSatoshis >= minRelayFeeSatoshis ? 'OK' : 'INSUFFISANT'}`);
 
   // Montant par UTXO : 0.0001 (message) + fees dynamiques
   const amountPerUtxo = MESSAGING_CONFIG.MESSAGE_FEE + feeRate;
@@ -489,27 +512,58 @@ class NitoMessaging {
 
   console.log(`✅ UTXOs préparés, TXID: ${txid}`);
 
-  // Attendre confirmation
   console.log('⏳ Attente des nouveaux UTXOs...');
-  let attempts = 0;
-  while (attempts < 20) { // Max 2 minutes d'attente
-    await this.delay(6000);
 
+  const MAX_WAIT_TIME = 3600000; // 60 minutes max (pour congestion)
+  const CHECK_INTERVAL = 6000;   // Vérifier toutes les 6 secondes
+  const EXPECTED_BLOCK_TIME = 60000; // 60 secondes normalement
+
+  let elapsedTime = 0;
+  let found = false;
+
+  while (elapsedTime < MAX_WAIT_TIME && !found) {
+    // Calculer le pourcentage basé sur le temps de bloc attendu
+    const progressBasedOnTime = Math.min(100, (elapsedTime / EXPECTED_BLOCK_TIME) * 100);
+
+    // Mettre à jour l'affichage avec le pourcentage animé
+    this.updateProgressIndicator(0, 1, `Préparation des UTXOs (${Math.round(progressBasedOnTime)}%)`);
+
+    console.log(`🔍 Attente ${Math.round(elapsedTime/1000)}s - Progression: ${Math.round(progressBasedOnTime)}%`);
+
+    // Attendre 6 secondes
+    await this.delay(CHECK_INTERVAL);
+    elapsedTime += CHECK_INTERVAL;
+
+    // Vérifier si les UTXOs sont disponibles
     const newUtxos = await this.getAvailableUtxos(walletData.bech32Address);
     const smallUtxos = newUtxos.filter(u => u.amount >= MESSAGING_CONFIG.MESSAGE_FEE * 1.5 && u.amount <= 0.0005);
 
-    console.log(`🔍 Tentative ${attempts + 1}: ${smallUtxos.length} petits UTXOs trouvés`);
+    console.log(`🔍 ${Math.round(elapsedTime/1000)}s: ${smallUtxos.length} petits UTXOs trouvés`);
 
     if (smallUtxos.length >= chunksNeeded) {
       console.log(`✅ ${smallUtxos.length} UTXOs optimisés disponibles !`);
+      found = true;
+      // Afficher 100% une fois trouvé
+      this.updateProgressIndicator(1, 1, 'Préparation terminée');
+      await this.delay(1000); // Laisser voir le 100%
       return txid;
     }
 
-    attempts++;
+    // Si on dépasse 60s, indiquer que c'est plus long que prévu
+    if (elapsedTime > EXPECTED_BLOCK_TIME && elapsedTime < EXPECTED_BLOCK_TIME + CHECK_INTERVAL) {
+      console.log('⚠️ Bloc plus lent que prévu, attente prolongée...');
+    }
+
+    // Messages informatifs à intervalles réguliers
+    if (elapsedTime % 300000 === 0 && elapsedTime > 0) { // Toutes les 5 minutes
+      console.log(`⏰ Attente en cours: ${Math.round(elapsedTime/60000)} minutes écoulées`);
+    }
   }
 
-  throw new Error('Timeout: nouveaux UTXOs non confirmés après 2 minutes');
+  if (!found) {
+    throw new Error(`Timeout: nouveaux UTXOs non confirmés après 60 minutes`);
   }
+}
 
   async getChangeUtxo(txid) {
     try {
@@ -759,12 +813,9 @@ class NitoMessaging {
       const transactions = await this.getAddressTransactions(walletData.bech32Address);
       const messages = new Map();
 
-      let processedCount = 0;
+      // Plus besoin de progression - tout est fait dans getAddressTransactions !
       for (const tx of transactions) {
-        processedCount++;
-        this.showScanProgress(processedCount, transactions.length, i18next.t('progress_indicators.analyzing_messages'));
-
-        const opReturnData = await this.extractTransactionOpReturn(tx.txid);
+        const opReturnData = tx.opReturnData; // ← Utiliser la donnée déjà récupérée
 
         if (opReturnData && opReturnData.startsWith(MESSAGING_CONFIG.MESSAGE_PREFIX)) {
           const messageData = opReturnData.substring(MESSAGING_CONFIG.MESSAGE_PREFIX.length);
@@ -787,7 +838,7 @@ class NitoMessaging {
               totalChunks: parseInt(totalChunks),
               timestamp: tx.time || Date.now() / 1000,
               txid: tx.txid,
-              senderAddress: await this.getTransactionSenderAddress(tx.txid)
+              senderAddress: tx.senderAddress  // ← Utiliser la donnée déjà récupérée
             });
           }
 
@@ -896,44 +947,98 @@ class NitoMessaging {
   }
 
   async getAddressTransactions(address) {
-    try {
-      console.log("🔍 Recherche transactions pour:", address);
-      const scan = await window.rpc("scantxoutset", ["start", [`addr(${address})`]]);
+  try {
+    console.log("🔍 Recherche transactions pour:", address);
+    const scan = await window.rpc("scantxoutset", ["start", [`addr(${address})`]]);
 
-      if (scan.unspents) {
-        scan.unspents = scan.unspents.filter(utxo => utxo.amount < 0.0005);
-        console.log(i18next.t('messaging_debug.filtered_utxos', { count: scan.unspents.length }));
-      }
-      const transactions = [];
-      const txidSet = new Set();
+    if (scan.unspents) {
+      scan.unspents = scan.unspents.filter(utxo => utxo.amount < 0.0005);
+      console.log(`📊 UTXOs filtrés: ${scan.unspents.length}`);
+    }
 
-      if (scan.unspents) {
-        for (const utxo of scan.unspents) {
-          if (!txidSet.has(utxo.txid)) {
-            txidSet.add(utxo.txid);
-            try {
-              const txDetail = await window.rpc("getrawtransaction", [utxo.txid, true]);
-              transactions.push({
-                txid: txDetail.txid,
-                time: txDetail.time || txDetail.blocktime || Date.now() / 1000,
-                vout: txDetail.vout,
-                vin: txDetail.vin
-              });
-              console.log("✅ Transaction récupérée:", txDetail.txid);
-            } catch (e) {
-              console.warn(`⚠️ Transaction ${utxo.txid} inaccessible`);
+    const transactions = [];
+    const uniqueTxids = [...new Set(scan.unspents?.map(utxo => utxo.txid) || [])];
+    console.log(`🚀 Analyse complète de ${uniqueTxids.length} transactions par lots...`);
+
+    const BATCH_SIZE = 20;
+
+    for (let i = 0; i < uniqueTxids.length; i += BATCH_SIZE) {
+      const batch = uniqueTxids.slice(i, i + BATCH_SIZE);
+      const batchNumber = Math.floor(i/BATCH_SIZE) + 1;
+      const totalBatches = Math.ceil(uniqueTxids.length/BATCH_SIZE);
+
+      console.log(`📥 Lot ${batchNumber}/${totalBatches}: ${batch.length} transactions`);
+
+      // Mise à jour de la progression avec le vrai pourcentage
+      this.showScanProgress(i + batch.length, uniqueTxids.length);
+
+      const batchPromises = batch.map(async (txid) => {
+        try {
+          const txDetail = await window.rpc("getrawtransaction", [txid, true]);
+
+          // TOUT FAIRE ICI EN UNE FOIS
+          // 1. Extraire OP_RETURN
+          let opReturnData = null;
+          for (const output of txDetail.vout) {
+            if (output.scriptPubKey && output.scriptPubKey.hex) {
+              opReturnData = this.extractOpReturnData(output.scriptPubKey.hex);
+              if (opReturnData) break;
             }
           }
-        }
-      }
 
-      console.log(`📊 Total: ${transactions.length} transactions trouvées`);
-      return transactions;
-    } catch (error) {
-      console.error("❌ Erreur récupération transactions:", error);
-      return [];
+          // 2. Extraire adresse expéditeur
+          let senderAddress = "unknown_sender";
+          if (txDetail.vin && txDetail.vin.length > 0) {
+            const firstInput = txDetail.vin[0];
+            if (firstInput.txid && firstInput.vout !== undefined) {
+              try {
+                const prevTx = await window.rpc('getrawtransaction', [firstInput.txid, true]);
+                const prevOutput = prevTx.vout[firstInput.vout];
+                if (prevOutput.scriptPubKey && prevOutput.scriptPubKey.addresses) {
+                  senderAddress = prevOutput.scriptPubKey.addresses[0];
+                } else if (prevOutput.scriptPubKey && prevOutput.scriptPubKey.address) {
+                  senderAddress = prevOutput.scriptPubKey.address;
+                }
+              } catch (e) {
+                // Garde "unknown_sender"
+              }
+            }
+          }
+
+          return {
+            txid: txDetail.txid,
+            time: txDetail.time || txDetail.blocktime || Date.now() / 1000,
+            vout: txDetail.vout,
+            vin: txDetail.vin,
+            opReturnData: opReturnData,      // ← NOUVEAU
+            senderAddress: senderAddress     // ← NOUVEAU
+          };
+        } catch (e) {
+          console.warn(`⚠️ Transaction ${txid} inaccessible`);
+          return null;
+        }
+      });
+
+      const batchResults = await Promise.all(batchPromises);
+      const validResults = batchResults.filter(tx => tx !== null);
+      transactions.push(...validResults);
+
+      console.log(`✅ Lot ${batchNumber} terminé: ${validResults.length}/${batch.length} transactions analysées`);
+
+      // Pause courte entre les lots
+      if (i + BATCH_SIZE < uniqueTxids.length) {
+        await new Promise(resolve => setTimeout(resolve, 100));
+      }
     }
+
+    console.log(`🎉 Total: ${transactions.length} transactions complètement analysées`);
+    return transactions;
+
+  } catch (error) {
+    console.error("❌ Erreur récupération transactions:", error);
+    return [];
   }
+}
 
   async extractTransactionOpReturn(txid) {
     try {
@@ -1224,7 +1329,7 @@ function displayMessages(messages) {
     div.innerHTML = `
       <div><strong>${statusIcon} ${i18next.t('encrypted_messaging.message')} ${i + 1} ${securityIcon}</strong></div>
       <div><strong>${i18next.t('encrypted_messaging.from')}:</strong> ${msg.sender || msg.senderAddress}</div>
-      <div><strong>${i18next.t('encrypted_messaging.content')}:</strong> ${msg.content}</div>
+      <div style="white-space: pre-wrap;"><strong>${i18next.t('encrypted_messaging.content')}:</strong> ${msg.content}</div>
       <div class="message-status">
         ${new Date(msg.timestamp).toLocaleString()} - ${statusText}${msg.verified ? ' ✓ ' + i18next.t('encrypted_messaging.signature_verified') : ''}${msg.status !== 'error' ? ' 🔐 ' + i18next.t('encrypted_messaging.noble_ecdh_encryption') : ''}
       </div>
@@ -1249,7 +1354,7 @@ function updateUnreadCounter(count) {
 function showLoadingSpinner(show) {
   const spinner = document.getElementById('loadingSpinner');
   if (spinner) {
-    spinner.style.display = 'none';
+    spinner.style.display = show ? 'block' : 'none';
   }
 
   let progressElement = document.getElementById('messageProgress');
