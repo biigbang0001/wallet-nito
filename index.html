@@ -209,24 +209,6 @@
       background: #546e7a;
       color: #e0e0e0;
     }
-    /* Styles pour l'effet de neige */
-    .snowflake {
-      position: absolute;
-      top: -50px;
-      z-index: 999;
-      pointer-events: none;
-      animation: fall linear infinite;
-    }
-    @keyframes fall {
-      0% {
-        transform: translateY(-50px) rotate(0deg);
-        opacity: 1;
-      }
-      100% {
-        transform: translateY(100vh) rotate(360deg);
-        opacity: 0.5;
-      }
-    }
     /* Ajustement du zoom initial sur mobile */
     @media (max-width: 768px) {
       html, body {
@@ -389,6 +371,7 @@
     <h2 data-i18n="send_section.title">📤 Envoyer NITO</h2>
     <input id="destinationAddress" placeholder="Adresse destinataire" data-i18n="[placeholder]send_section.destination_placeholder"/>
     <input id="amountNito" type="number" step="0.00000001" placeholder="Montant (NITO)" data-i18n="[placeholder]send_section.amount_placeholder"/>
+    <button id="maxButton" type="button" class="copy-btn" style="margin-left: 5px; background: #4b5e40;" data-i18n="max_button.text">MAX</button>
     <input id="feeNito" type="number" step="0.00000001" placeholder="Frais (NITO)" value="0.0001" data-i18n="[placeholder]send_section.fee_placeholder"/>
     <label data-i18n="send_section.debit_label">Adresse à débiter :</label>
     <select id="debitAddressType">
@@ -455,32 +438,6 @@
       <div class="message-item">Aucun message reçu</div>
     </div>
   </div>
-
-  <!-- Script pour l'effet de neige -->
-  <script>
-    function createSnowflake() {
-      const snowflake = document.createElement('img');
-      snowflake.src = 'https://raw.githubusercontent.com/biigbang0001/NitoNode-Explorer/refs/heads/main/favicon-192.png';
-      snowflake.className = 'snowflake';
-      snowflake.style.width = '20px';
-      snowflake.style.height = '20px';
-      snowflake.style.left = Math.random() * 100 + 'vw';
-      snowflake.style.animationDuration = Math.random() * 5 + 5 + 's';
-      snowflake.style.animationDelay = Math.random() * 5 + 's';
-      snowflake.style.opacity = Math.random() * 0.5 + 0.5;
-      document.body.appendChild(snowflake);
-
-      setTimeout(() => {
-        snowflake.remove();
-      }, (parseFloat(snowflake.style.animationDuration) + parseFloat(snowflake.style.animationDelay)) * 1000);
-    }
-
-    setInterval(createSnowflake, 500);
-
-    for (let i = 0; i < 10; i++) {
-      createSnowflake();
-    }
-  </script>
 
   <!-- Script pour réinitialiser le zoom sur mobile -->
   <script>
