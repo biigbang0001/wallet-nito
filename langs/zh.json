@@ -84,7 +84,8 @@
       "sending": "发送中",
       "confirmation": "确认",
       "analyzing_messages": "分析消息",
-      "analyzing_transactions": "分析交易"
+      "analyzing_transactions": "分析交易",
+      "preparing_utxos": "准备 UTXO：{{current}}/{{total}} 片段 ({{percentage}}%)"
     },
     "receipt": {
       "sent": "✅ 回执已发送！",
