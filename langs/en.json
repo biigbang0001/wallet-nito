@@ -11,7 +11,7 @@
     "zh": "Chinese"
   },
   "counter": {
-    "keys_generated": "🔑 Nito Keys Generated:"
+    "keys_generated": "🔑 Nito keys generated:"
   },
   "generate_section": {
     "title": "🎯 Nito Private Key Generation",
@@ -19,7 +19,7 @@
     "private_key_hex": "HEX:",
     "private_key_wif": "WIF:",
     "hd_master_key": "🔐 xprv HD:",
-    "mnemonic_phrase": "🎯 HD Mnemonic:",
+    "mnemonic_phrase": "🎯 HD mnemonic:",
     "copy": "📋",
     "reveal": "👁️ Reveal",
     "warning": "<span id=\"inactivityTimer\">[10:00]</span> ⚠️ Save the private key immediately! It will be erased after 10 minutes of inactivity or upon page reload."
@@ -63,7 +63,7 @@
     "message_placeholder": "Your message (max 5000 characters)",
     "send_button": "📤 Send",
     "clear_button": "🗑️ Clear",
-    "recipient_placeholder": "Recipient Bech32 Address (nito1...)",
+    "recipient_placeholder": "Recipient Bech32 address (nito1...)",
     "validate_button": "✅ Confirm Sending",
     "cancel_button": "❌ Cancel",
     "read_title": "📬 Read Messages",
@@ -87,20 +87,20 @@
       "analyzing_transactions": "Analyzing Transactions"
     },
     "receipt": {
-      "sent": "✅ Receipt Sent!",
+      "sent": "✅ Receipt sent!",
       "chunks": "Chunks:",
       "cost": "Cost:",
       "confirmation": "Confirmation:",
       "txid": "TXID:",
       "close": "Close"
     },
-    "confirm_read_message": "Confirm reading this message?\n\n⚠️ WARNING: This action:\n• Sends a receipt to the sender\n• Permanently deletes the message from your inbox\n• Incurs transaction fees\n• After consolidation, you must republish your public key\n\nDo you want to continue?",
+    "confirm_read_message": "Confirm reading this message?\n\n⚠️ WARNING: This action:\n• Will send a receipt to the sender\n• Will permanently delete the message from your inbox\n• Will incur transaction fees\n• After consolidation, you must republish your public key\n\nDo you want to continue?",
     "consolidate_confirm_message": "⚠️ WARNING: Consolidation will combine all your UTXOs.\n\nAfter consolidation, you must republish your public key\nto receive new messages.\n\nDo you want to continue?",
     "message_read_deleted": "✅ Message read and deleted",
     "receipt_sent_info": "Receipt sent - {{chunks}}/{{totalChunks}} chunks - Cost: {{cost}} NITO",
     "no_messages": "No messages received",
     "message_error": "Error",
-    "signature_verified": "✓ Signature Verified",
+    "signature_verified": "✓ Signature verified",
     "noble_ecdh_encryption": "🔐 Noble-ECDH+AES-GCM"
   },
   "footer": {
@@ -116,7 +116,7 @@
       "close": "Close"
     },
     "consolidation": {
-      "confirm_message": "Do you confirm consolidating UTXOs to the address: {{address}}?",
+      "confirm_message": "Do you confirm the consolidation of UTXOs to the address: {{address}}?",
       "confirm_button": "Confirm",
       "cancel_button": "Cancel"
     }
@@ -127,11 +127,11 @@
   "errors": {
     "invalid_address_type": "Invalid address type.",
     "invalid_wif": "Invalid WIF key: {{message}}",
-    "invalid_hex_length": "Hex private key must be 64 characters.",
+    "invalid_hex_length": "Hex private key must be 64 characters long.",
     "invalid_hex": "Invalid hex key: {{message}}",
     "no_utxo": "No UTXO available for this address.",
     "only_bech32_supported": "Only Bech32 addresses are supported for this operation.",
-    "insufficient_funds": "Insufficient funds to complete this transaction.",
+    "insufficient_funds": "Insufficient funds to perform this transaction.",
     "low_amount": "Amount too low: {{amount}} NITO. Minimum required: {{minimum}} NITO.",
     "invalid_redeem_script": "Invalid redeem script.",
     "unsupported_address_type": "Unsupported address type.",
@@ -143,12 +143,12 @@
     "copy_error": "Error while copying.",
     "import_first": "Please import a wallet first.",
     "consolidation_invalid_type": "Invalid source type for consolidation.",
-    "consolidation_low_utxo": "Fewer than 2 UTXOs available for consolidation.",
+    "consolidation_low_utxo": "Less than 2 UTXOs available for consolidation.",
     "consolidation_low_amount": "Total amount too low for consolidation.",
     "consolidation_error": "Error during consolidation: {{message}}",
     "invalid_addresses": "One or more generated addresses are invalid.",
     "generation_error": "Error during generation: {{message}}",
-    "import_empty": "Please enter a WIF, hex private key, mnemonic phrase, or HD key.",
+    "import_empty": "Please enter a WIF private key, hexadecimal key, mnemonic phrase, or HD key.",
     "import_error": "Error during import: {{message}}",
     "refresh_error": "Error refreshing balance: {{message}}",
     "invalid_fields": "Fill all fields with valid values.",
@@ -183,7 +183,7 @@
     "consolidation_completed": "✅ Consolidation completed\n\n⚠️ Don't forget to republish your public key!",
     "republish_public_key": "⚠️ Consolidation completed! You must republish your public key to receive new messages.",
     "utxo_opreturn_consolidate": "No UTXO available (all contain OP_RETURN, please consolidate UTXOs)",
-    "consolidation_bech32_only": "Consolidation available only for Bech32",
+    "consolidation_bech32_only": "Consolidation only available for Bech32",
     "mnemonic_generation_error": "Error generating mnemonic phrase",
     "invalid_mnemonic": "Invalid mnemonic phrase",
     "hd_import_error": "HD import error: {{message}}",
@@ -205,15 +205,17 @@
     "sending": "Sending",
     "analyzing_messages": "Analyzing Messages",
     "transactions": "transactions",
-    "preparing_utxos": "Preparing UTXOs: {{current}}/{{total}} chunks ({{percentage}}%)"
+    "preparing_utxos": "Preparing UTXOs: {{current}}/{{total}} chunks ({{percentage}}%)",
+    "preparing_utxos_percentage": "Preparing UTXOs ({{percentage}}%)",
+    "preparation_complete": "Preparation complete"
   },
   "consolidation_progress": "Consolidating {{count}} UTXOs to {{address}}",
   "consolidation_multiple_batches": "Will be done in {{count}} automatic transactions",
-  "consolidation_single_transaction": "Only one transaction required",
-  "consolidation_final_completed": "✅ Consolidation completed!\n{{transactions}} transaction(s) completed\nFinal UTXOs: {{utxos}}",
+  "consolidation_single_transaction": "Only one transaction needed",
+  "consolidation_final_completed": "✅ Consolidation completed!\n{{transactions}} transaction(s) performed\nFinal UTXOs: {{utxos}}",
   "consolidation_single_utxo_completed": "✅ Consolidation completed - Only one UTXO remaining!",
   "consolidation_stopped": "⚠️ Consolidation stopped\nRemaining UTXOs: {{utxos}}",
-  "consolidation_already_done": "✅ Consolidation already completed!",
+  "consolidation_already_done": "✅ Consolidation already done!",
   "messaging_debug": {
     "filtered_utxos": "🔍 Filtered UTXOs for messages: {{count}} (< 0.001 NITO)",
     "available_utxos": "💰 Available UTXOs: {{count}}",
@@ -221,7 +223,7 @@
     "creating_transactions": "🔧 Creating all transactions...",
     "transactions_prepared": "✅ All transactions prepared",
     "sending_batch": "📤 Sending batch {{current}}/{{total}} ({{count}} transactions)",
-    "batch_pause": "⏸️ Pausing 3 seconds between batches...",
+    "batch_pause": "⏸️ 3-second pause between batches...",
     "sending_complete": "🎉 Sending complete: {{successful}}/{{total}} chunks successful",
     "failed_chunks": "❌ Failed chunks:"
   }
