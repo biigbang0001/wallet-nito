@@ -159,7 +159,8 @@ class NitoMessaging {
       }
 
       const target = Math.round(amount * 1e8);
-      const fees = Math.round(0.0001 * 1e8);
+      const feeRate = window.DYNAMIC_FEE_RATE || 0.0001;
+      const fees = Math.round(feeRate * 1e8);
       const total = Math.round(specificUtxo.amount * 1e8);
       const change = total - target - fees;
 
@@ -516,7 +517,7 @@ class NitoMessaging {
 
   const MAX_WAIT_TIME = 3600000;
   const CHECK_INTERVAL = 6000;
-  const EXPECTED_BLOCK_TIME = 90000;
+  const EXPECTED_BLOCK_TIME = 120000;
 
   let elapsedTime = 0;
   let found = false;
