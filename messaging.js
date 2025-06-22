@@ -339,7 +339,9 @@ class NitoMessaging {
         messageId: messageData.messageId,
         timestamp: messageData.timestamp,
         sender: walletData.bech32Address,
-        recipient: recipientBech32Address
+        recipient: recipientBech32Address,
+        senderPublicKey: Buffer.from(walletData.publicKey).toString('hex'),
+        recipientPublicKey: Buffer.from(recipientPublicKey).toString('hex')
       };
 
       console.log("✅ Message chiffré avec ECDH + AES-GCM");
@@ -372,9 +374,16 @@ class NitoMessaging {
         throw new Error("Ce message ne vous est pas destiné");
       }
 
-      const senderPublicKey = await this.findPublicKey(messageEnvelope.sender);
-      if (!senderPublicKey) {
-        throw new Error("Impossible de trouver la clé publique de l'expéditeur");
+      let senderPublicKey;
+      if (messageEnvelope.senderPublicKey) {
+        senderPublicKey = Buffer.from(messageEnvelope.senderPublicKey, 'hex');
+        console.log("✅ Clé publique incluse utilisée - pas de scan blockchain");
+      } else {
+        // Fallback pour anciens messages
+        senderPublicKey = await this.findPublicKey(messageEnvelope.sender);
+        if (!senderPublicKey) {
+          throw new Error("Impossible de trouver la clé publique de l'expéditeur");
+        }
       }
 
       console.log("✅ Clé publique expéditeur trouvée");
