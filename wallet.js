@@ -546,7 +546,7 @@ async function signTxBatch(to, amt, specificUtxos, isConsolidation = true) {
   const hex = tx.toHex();
 
   console.log('Batch transaction hex:', hex, 'TXID:', tx.getId());
-  return hex;
+  return { hex, actualFees: fees / 1e8 };
 }
 
 async function signTx(to, amt, isConsolidation = false) {
@@ -639,7 +639,7 @@ async function signTx(to, amt, isConsolidation = false) {
   const hex = tx.toHex();
 
   console.log('Transaction hex:', hex, 'TXID:', tx.getId());
-  return hex;
+  return { hex, actualFees: fees / 1e8 };
 }
 
 async function signTxWithPSBT(to, amt, isConsolidation = false) {
@@ -761,7 +761,7 @@ async function signTxWithPSBT(to, amt, isConsolidation = false) {
   const hex = tx.toHex();
 
   console.log('Transaction PSBT hex:', hex, 'TXID:', tx.getId());
-  return hex;
+  return { hex, actualFees: fees / 1e8 };
 }
 
 async function getExplorerUrl(txid) {
@@ -937,7 +937,8 @@ async function consolidateUtxos() {
 
         try {
           // Utiliser signTx pour consolider TOUS les UTXOs d'un coup
-          const hex = await signTx(sourceAddress, target / 1e8, true);
+          const result = await signTx(sourceAddress, target / 1e8, true);
+          const hex = result.hex;
           const txid = await rpc('sendrawtransaction', [hex]);
 
           console.log(`✅ Étape ${stepCount} réussie, TXID: ${txid}`);
@@ -1485,19 +1486,17 @@ window.addEventListener('load', async () => {
         let hex;
 
         try {
+          let result;
           if (sourceType === 'bech32' && destType === 'p2wpkh') {
             walletAddress = bech32Address;
-            hex = await signTx(dest, amt);
+            result = await signTx(dest, amt);
           } else {
             walletAddress = sourceType === 'legacy' ? legacyAddress : sourceType === 'p2sh' ? p2shAddress : bech32Address;
-            hex = await signTxWithPSBT(dest, amt);
+            result = await signTxWithPSBT(dest, amt);
           }
 
-          // Calculer les vrais frais de la transaction préparée
-          const txSize = hex.length / 2;
-          const feeRate = DYNAMIC_FEE_RATE || MIN_FEE_RATE;
-          const realFees = Math.max(txSize * feeRate, MIN_CONSOLIDATION_FEE);
-          $('feeNito').value = realFees.toFixed(8);
+          hex = result.hex;
+          $('feeNito').value = result.actualFees.toFixed(8);
 
           hideLoadingSpinner();
           $('signedTx').textContent = hex;
