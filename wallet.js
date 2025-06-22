@@ -34,7 +34,7 @@ const DUST_AMOUNT = {
   p2sh: 540
 };
 const MIN_CONSOLIDATION_FEE = 0.00005;
-const MAX_UTXOS_PER_BATCH = 100;
+const MAX_UTXOS_PER_BATCH = 500;
 
 let walletAddress = '';
 let legacyAddress = '';
@@ -836,6 +836,13 @@ async function consolidateUtxos() {
 
     console.log('Initial UTXOs to consolidate:', initialUtxos.length);
 
+    // Calculer le nombre d'étapes nécessaires
+    const utxosPerBatch = 500;
+    const estimatedSteps = Math.ceil(initialUtxos.length / utxosPerBatch);
+    const maxSteps = Math.min(estimatedSteps, 100);
+
+    console.log(`Consolidation estimée: ${estimatedSteps} étapes pour ${initialUtxos.length} UTXOs`);
+
     // Demander confirmation
     const confirm = await new Promise(resolve => {
       hideLoadingSpinner();
@@ -851,8 +858,7 @@ async function consolidateUtxos() {
       popup.style.zIndex = '1000';
       popup.style.color = body.classList.contains('dark-mode') ? '#e0e0e0' : '#1e3a8a';
       popup.innerHTML = DOMPurify.sanitize(`
-        <p>${i18next.t('consolidation_progress', { count: initialUtxos.length, address: sourceAddress })}</p>
-        <p>Tous les UTXOs seront consolidés en un seul.</p>
+        <p>${initialUtxos.length} UTXOs → 1 UTXO</p>
         <button id="confirmConsolidate">Confirmer</button>
         <button id="cancelConsolidate">Annuler</button>
       `);
@@ -890,8 +896,8 @@ async function consolidateUtxos() {
 
     try {
       // Boucle pour traiter TOUS les UTXOs
-      while (currentUtxos.length > 1 && stepCount <= 10) {
-        console.log(`🔄 Étape ${stepCount} - UTXOs restants: ${currentUtxos.length}`);
+      while (currentUtxos.length > 1 && stepCount <= maxSteps) {
+        console.log(`${stepCount}/${maxSteps} (${Math.round((stepCount/maxSteps)*100)}%) - UTXOs restants: ${currentUtxos.length}`);
 
         // Si on a exactement 1 UTXO, on a terminé
         if (currentUtxos.length === 1) {
