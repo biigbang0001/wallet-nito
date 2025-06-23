@@ -159,7 +159,7 @@ class NitoMessaging {
       }
 
       const target = Math.round(amount * 1e8);
-      const feeRate = window.DYNAMIC_FEE_RATE || 0.0001;
+      const feeRate = window.DYNAMIC_FEE_RATE || 0.00001;
       const fees = Math.round(feeRate * 1e8);
       const total = Math.round(specificUtxo.amount * 1e8);
       const change = total - target - fees;
