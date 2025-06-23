@@ -96,21 +96,50 @@ function updateTranslations() {
 }
 
 async function rpc(method, params) {
-  try {
-    const res = await fetch(NODE_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ jsonrpc: '2.0', method, params, id: Date.now() })
-    });
-    const text = await res.text();
-    console.log('RPC raw response:', text);
-    if (!res.ok) throw new Error(`HTTP Error: ${res.status} - ${text}`);
-    const data = JSON.parse(text);
-    if (data.error) throw new Error(data.error.message);
-    return data.result;
-  } catch (e) {
-    console.error('RPC Error:', method, e);
-    throw e;
+  const conflictMethods = ['scantxoutset'];
+
+  if (conflictMethods.includes(method)) {
+    while (true) {
+      try {
+        const res = await fetch(NODE_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ jsonrpc: '2.0', method, params, id: Date.now() })
+        });
+        const text = await res.text();
+        console.log('RPC raw response:', text);
+        if (!res.ok) throw new Error(`HTTP Error: ${res.status} - ${text}`);
+        const data = JSON.parse(text);
+        if (data.error) throw new Error(data.error.message);
+        return data.result;
+
+      } catch (e) {
+        if (e.message.includes("Scan already in progress")) {
+          const delay = Math.random() * 3000 + 2000;
+          console.log(`⏳ ${method} en attente, retry dans ${Math.round(delay/1000)}s...`);
+          await new Promise(resolve => setTimeout(resolve, delay));
+          continue;
+        }
+        throw e;
+      }
+    }
+  } else {
+    try {
+      const res = await fetch(NODE_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ jsonrpc: '2.0', method, params, id: Date.now() })
+      });
+      const text = await res.text();
+      console.log('RPC raw response:', text);
+      if (!res.ok) throw new Error(`HTTP Error: ${res.status} - ${text}`);
+      const data = JSON.parse(text);
+      if (data.error) throw new Error(data.error.message);
+      return data.result;
+    } catch (e) {
+      console.error('RPC Error:', method, e);
+      throw e;
+    }
   }
 }
 
@@ -224,10 +253,13 @@ function hideLoadingSpinner() {
 async function initNetworkParams() {
   try {
     const feeInfo = await rpc('estimatesmartfee', [6]);
-    DYNAMIC_FEE_RATE = feeInfo.feerate || MIN_FEE_RATE;
+    const rawFeeRate = feeInfo.feerate || MIN_FEE_RATE;
+    DYNAMIC_FEE_RATE = rawFeeRate;
+    window.DYNAMIC_FEE_RATE = DYNAMIC_FEE_RATE;
     console.log('Dynamic fee rate:', DYNAMIC_FEE_RATE);
   } catch (e) {
     DYNAMIC_FEE_RATE = MIN_FEE_RATE;
+    window.DYNAMIC_FEE_RATE = DYNAMIC_FEE_RATE;
     console.error('Error fetching fees:', e);
   }
 }
@@ -498,7 +530,7 @@ async function signTxBatch(to, amt, specificUtxos, isConsolidation = true) {
   }
 
   // Calcul des frais basé sur les UTXOs réellement utilisés
-  const feeRate = DYNAMIC_FEE_RATE || MIN_FEE_RATE;
+  const feeRate = DYNAMIC_FEE_RATE || rawFeeRate || MIN_FEE_RATE;
   const fees = Math.max(
     Math.round((selectedIns.length * 68 + 50) * (feeRate * 1e8) / 1000),
     Math.round(MIN_CONSOLIDATION_FEE * 1e8)
@@ -594,7 +626,7 @@ async function signTx(to, amt, isConsolidation = false) {
 
   const txSize = estimateTxSize(sendScriptType, selectedIns.length, 1, destScriptType);
   const feeRate = DYNAMIC_FEE_RATE || MIN_FEE_RATE;
-  const inputFee = Math.max(Math.round((selectedIns.length * 150 + 50) * (feeRate * 1e8) / 1000), Math.round(MIN_CONSOLIDATION_FEE * 1e8));
+  const inputFee = Math.max(Math.round((selectedIns.length * 68 + 50) * (feeRate * 1e8) / 1000), Math.round(MIN_CONSOLIDATION_FEE * 1e8));
 
   console.log('Estimated size:', txSize, 'vbytes, Fee:', inputFee / 1e8, 'NITO, Selected UTXOs:', selectedIns.length);
 
@@ -685,7 +717,7 @@ async function signTxWithPSBT(to, amt, isConsolidation = false) {
 
   const txSize = estimateTxSize(sendScriptType, selectedIns.length, 1, destScriptType);
   const feeRate = DYNAMIC_FEE_RATE || MIN_FEE_RATE;
-  const inputFee = Math.max(Math.round((selectedIns.length * 150 + 50) * (feeRate * 1e8) / 1000), Math.round(MIN_CONSOLIDATION_FEE * 1e8));
+  const inputFee = Math.max(Math.round((selectedIns.length * 68 + 50) * (feeRate * 1e8) / 1000), Math.round(MIN_CONSOLIDATION_FEE * 1e8));
 
   console.log('Estimated size:', txSize, 'vbytes, Fee:', inputFee / 1e8, 'NITO, Selected UTXOs:', selectedIns.length);
 
@@ -921,11 +953,7 @@ async function consolidateUtxos() {
         }
 
         const feeRate = DYNAMIC_FEE_RATE || MIN_FEE_RATE;
-        const batchFee = Math.max(
-          Math.round((batchUtxos.length * 150 + 50) * (feeRate * 1e8) / 1000),
-          Math.round(MIN_CONSOLIDATION_FEE * 1e8)
-        );
-
+        const batchFee = Math.round((batchUtxos.length * 68 + 50) * (feeRate * 1e8) / 1000);
         const target = batchTotal - batchFee;
 
         if (target < getDustThreshold('p2wpkh')) {
@@ -1408,7 +1436,7 @@ window.addEventListener('load', async () => {
 
               const feeRate = DYNAMIC_FEE_RATE || MIN_FEE_RATE;
               const fees = Math.max(
-                Math.round((selectedIns.length * 150 + 50) * (feeRate * 1e8) / 1000),
+                Math.round((selectedIns.length * 68 + 50) * (feeRate * 1e8) / 1000),
                 Math.round(MIN_CONSOLIDATION_FEE * 1e8)
               );
 
