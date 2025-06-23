@@ -160,7 +160,8 @@ class NitoMessaging {
 
       const target = Math.round(amount * 1e8);
       const feeRate = window.DYNAMIC_FEE_RATE || 0.00001;
-      const fees = Math.round(feeRate * 1e8);
+      const txSize = 250;
+      const fees = Math.round(txSize * (feeRate * 1e8) / 1000);
       const total = Math.round(specificUtxo.amount * 1e8);
       const change = total - target - fees;
 
@@ -224,7 +225,8 @@ class NitoMessaging {
 
       console.log('Publication clé publique...');
 
-      const availableUtxos = await this.getAvailableUtxos(walletData.bech32Address);
+      let availableUtxos = await this.getAvailableUtxos(walletData.bech32Address);
+      availableUtxos = availableUtxos.filter(utxo => utxo.amount >= 0.000003);
       if (availableUtxos.length === 0) {
         throw new Error('Aucun UTXO disponible pour publier la clé publique');
       }
@@ -432,7 +434,8 @@ class NitoMessaging {
   async prepareUtxosForMessage(chunksNeeded) {
   console.log(`🔧 Préparation de ${chunksNeeded} UTXOs optimisés pour messagerie...`);
 
-  const availableUtxos = await this.getAvailableUtxos(walletData.bech32Address);
+  let availableUtxos = await this.getAvailableUtxos(walletData.bech32Address);
+  availableUtxos = availableUtxos.filter(utxo => utxo.amount >= 0.000003);
   if (availableUtxos.length === 0) {
     throw new Error('Aucun UTXO disponible pour la préparation');
   }
@@ -444,32 +447,17 @@ class NitoMessaging {
 
   console.log(`📏 Transaction estimée: ${estimatedTxSize} bytes pour ${chunksNeeded} UTXOs`);
 
-  // Calculer fees dynamiques si disponible, sinon utiliser 1 sat/byte minimum
-  let satoshisPerByte = 1; // Minimum réseau
-  if (window.calculateDynamicFee && typeof window.calculateDynamicFee === 'function') {
-    try {
-      const dynamicFeeRate = await window.calculateDynamicFee();
-      satoshisPerByte = Math.max(1, Math.round(dynamicFeeRate * 1e8 / 250)); // Convertir en sat/byte
-      console.log(`💰 Fees dynamiques: ${satoshisPerByte} sat/byte`);
-    } catch (e) {
-      console.warn('⚠️ Erreur fees dynamiques, utilisation du minimum');
-    }
-  }
+  const feeRate = window.DYNAMIC_FEE_RATE || 0.00001;
+  const preparationFeesInSatoshis = Math.round(estimatedTxSize * (feeRate * 1e8) / 1000);
+  const preparationFeeRate = preparationFeesInSatoshis / 1e8;
 
-  // Calculer les fees exacts pour cette transaction
-  const exactFeesInSatoshis = estimatedTxSize * satoshisPerByte;
-  const exactFeesInNito = exactFeesInSatoshis / 1e8;
-
-  // S'assurer qu'on dépasse le minimum relay fee (11551 satoshis)
-  const minRelayFeeSatoshis = 11551;
-  const finalFeesInSatoshis = Math.max(exactFeesInSatoshis, minRelayFeeSatoshis);
-  const feeRate = finalFeesInSatoshis / 1e8;
-
-  console.log(`💰 Fees calculés: ${finalFeesInSatoshis} satoshis (${feeRate.toFixed(8)} NITO)`);
-  console.log(`✅ Fees minimum relay: ${minRelayFeeSatoshis} satoshis - ${finalFeesInSatoshis >= minRelayFeeSatoshis ? 'OK' : 'INSUFFISANT'}`);
+  console.log(`💰 Fees calculés: ${preparationFeesInSatoshis} satoshis (${preparationFeeRate.toFixed(8)} NITO)`);
 
   // Montant par UTXO : 0.0001 (message) + fees dynamiques
-  const amountPerUtxo = MESSAGING_CONFIG.MESSAGE_FEE + feeRate;
+  const baseFee = window.DYNAMIC_FEE_RATE || 0.00001;
+  const amountPerUtxo = MESSAGING_CONFIG.MESSAGE_FEE + (preparationFeeRate * 1.2);
+
+  console.log(`💰 UTXOs adaptatifs: ${amountPerUtxo.toFixed(8)} NITO (baseFee: ${baseFee.toFixed(8)})`);
   const totalNeeded = chunksNeeded * amountPerUtxo;
 
   const biggestUtxo = availableUtxos[0];
@@ -500,7 +488,7 @@ class NitoMessaging {
 
   // Change restant
   const usedAmount = chunksNeeded * outputAmount;
-  const fees = Math.round(feeRate * 1e8);
+  const fees = Math.round(preparationFeeRate * 1e8);
   const change = total - usedAmount - fees;
 
   if (change > 294) {
@@ -546,7 +534,9 @@ class NitoMessaging {
 
     // Vérifier si les UTXOs sont disponibles
     const newUtxos = await this.getAvailableUtxos(walletData.bech32Address);
-    const smallUtxos = newUtxos.filter(u => u.amount >= MESSAGING_CONFIG.MESSAGE_FEE * 1.5 && u.amount <= 0.0005);
+    const smallUtxos = newUtxos
+      .filter(u => u.amount > MESSAGING_CONFIG.MESSAGE_FEE && u.amount <= 0.001)
+      .sort((a, b) => a.amount - b.amount);
 
     console.log(`🔍 ${Math.round(elapsedTime/1000)}s: ${smallUtxos.length} petits UTXOs trouvés`);
 
@@ -650,6 +640,7 @@ class NitoMessaging {
       console.log(`📦 Message divisé en ${chunks.length} chunks`);
 
       let availableUtxos = await this.getAvailableUtxos(walletData.bech32Address);
+      availableUtxos = availableUtxos.filter(utxo => utxo.amount < 0.001);
       if (availableUtxos.length < chunks.length) {
         console.log(`⚠️ Préparation de ${chunks.length} UTXOs optimisés...`);
         await this.prepareUtxosForMessage(chunks.length);
@@ -657,6 +648,7 @@ class NitoMessaging {
         // Recharger les UTXOs après préparation
         await this.delay(2000);
         availableUtxos = await this.getAvailableUtxos(walletData.bech32Address);
+        availableUtxos = availableUtxos.filter(utxo => utxo.amount < 0.001);
       }
 
       if (availableUtxos.length === 0) {
@@ -667,7 +659,8 @@ class NitoMessaging {
 
       try {
         // Récupérer TOUS les UTXOs disponibles
-        const allAvailableUtxos = await this.getAvailableUtxos(walletData.bech32Address);
+        let allAvailableUtxos = await this.getAvailableUtxos(walletData.bech32Address);
+        allAvailableUtxos = allAvailableUtxos.filter(utxo => utxo.amount < 0.001);
         console.log(i18next.t('messaging_debug.available_utxos', { count: allAvailableUtxos.length }));
 
         // Réserver tous les UTXOs qu'on va utiliser
@@ -804,7 +797,6 @@ class NitoMessaging {
         if (typeof utxosToUse !== 'undefined') {
           utxosToUse.forEach(utxo => this.releaseUtxo(utxo.txid, utxo.vout));
         }
-        this.releaseUtxo(biggestUtxo.txid, biggestUtxo.vout);
         throw error;
       }
 
@@ -1156,7 +1148,7 @@ class NitoMessaging {
     if (!scan.success || !scan.unspents) return [];
 
     const viableUtxos = scan.unspents
-      .filter(u => u.amount >= MESSAGING_CONFIG.MESSAGE_FEE * 1.5)
+      .filter(u => u.amount >= 0.000003)
       .map(u => ({
         txid: u.txid,
         vout: u.vout,
