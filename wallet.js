@@ -185,8 +185,8 @@ async function updateCounterDisplay() {
 // NOUVELLE FONCTION: Filtrer les UTXOs avec OP_RETURN
 async function filterOpReturnUtxos(utxos) {
   // Filtrage simple par montant minimum pour éviter les UTXOs de messaging
-  const filteredUtxos = utxos.filter(utxo => utxo.amount >= 0.001);
-  console.log(`UTXOs filtrés: ${filteredUtxos.length}/${utxos.length} (minimum 0.001 NITO)`);
+  const filteredUtxos = utxos.filter(utxo => utxo.amount >= 0.000003);
+  console.log(`UTXOs filtrés: ${filteredUtxos.length}/${utxos.length} (minimum 0.000003 NITO)`);
   return filteredUtxos;
 }
 
