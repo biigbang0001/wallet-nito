@@ -500,7 +500,7 @@ async function signTxBatch(to, amt, specificUtxos, isConsolidation = true) {
   // Calcul des frais basé sur les UTXOs réellement utilisés
   const feeRate = DYNAMIC_FEE_RATE || MIN_FEE_RATE;
   const fees = Math.max(
-    Math.round((selectedIns.length * 150 + 50) * (feeRate * 1e8) / 1000),
+    Math.round((selectedIns.length * 68 + 50) * (feeRate * 1e8) / 1000),
     Math.round(MIN_CONSOLIDATION_FEE * 1e8)
   );
 
