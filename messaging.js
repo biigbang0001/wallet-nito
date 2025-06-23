@@ -535,7 +535,7 @@ class NitoMessaging {
     // Vérifier si les UTXOs sont disponibles
     const newUtxos = await this.getAvailableUtxos(walletData.bech32Address);
     const smallUtxos = newUtxos
-      .filter(u => u.amount > MESSAGING_CONFIG.MESSAGE_FEE && u.amount <= 0.001)
+      .filter(u => u.amount > MESSAGING_CONFIG.MESSAGE_FEE && u.amount <= 0.01)
       .sort((a, b) => a.amount - b.amount);
 
     console.log(`🔍 ${Math.round(elapsedTime/1000)}s: ${smallUtxos.length} petits UTXOs trouvés`);
@@ -640,7 +640,7 @@ class NitoMessaging {
       console.log(`📦 Message divisé en ${chunks.length} chunks`);
 
       let availableUtxos = await this.getAvailableUtxos(walletData.bech32Address);
-      availableUtxos = availableUtxos.filter(utxo => utxo.amount < 0.001);
+      availableUtxos = availableUtxos.filter(utxo => utxo.amount >= 0.000003 && utxo.amount < 0.01);
       if (availableUtxos.length < chunks.length) {
         console.log(`⚠️ Préparation de ${chunks.length} UTXOs optimisés...`);
         await this.prepareUtxosForMessage(chunks.length);
@@ -648,7 +648,7 @@ class NitoMessaging {
         // Recharger les UTXOs après préparation
         await this.delay(2000);
         availableUtxos = await this.getAvailableUtxos(walletData.bech32Address);
-        availableUtxos = availableUtxos.filter(utxo => utxo.amount < 0.001);
+        availableUtxos = availableUtxos.filter(utxo => utxo.amount < 0.01);
       }
 
       if (availableUtxos.length === 0) {
@@ -660,7 +660,7 @@ class NitoMessaging {
       try {
         // Récupérer TOUS les UTXOs disponibles
         let allAvailableUtxos = await this.getAvailableUtxos(walletData.bech32Address);
-        allAvailableUtxos = allAvailableUtxos.filter(utxo => utxo.amount < 0.001);
+        allAvailableUtxos = allAvailableUtxos.filter(utxo => utxo.amount >= 0.000003 && utxo.amount < 0.01);
         console.log(i18next.t('messaging_debug.available_utxos', { count: allAvailableUtxos.length }));
 
         // Réserver tous les UTXOs qu'on va utiliser
@@ -954,7 +954,7 @@ class NitoMessaging {
     const scan = await window.rpc("scantxoutset", ["start", [`addr(${address})`]]);
 
     if (scan.unspents) {
-      scan.unspents = scan.unspents.filter(utxo => utxo.amount < 0.0005);
+      scan.unspents = scan.unspents.filter(utxo => utxo.amount < 0.000003);
       console.log(`📊 UTXOs filtrés: ${scan.unspents.length}`);
     }
 
