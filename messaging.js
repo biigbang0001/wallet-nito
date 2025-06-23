@@ -3,11 +3,11 @@ import * as bitcoin from 'https://esm.sh/bitcoinjs-lib@6.1.5?bundle';
 import * as secp256k1 from 'https://esm.sh/@noble/secp256k1@2.1.0';
 
 const MESSAGING_CONFIG = {
-  CHUNK_SIZE: 20,
+  CHUNK_SIZE: 40,
   MESSAGE_PREFIX: 'N_',
   PUBKEY_PREFIX: 'NITO_PUB_',
   COMPRESSION_LEVEL: 9,
-  MESSAGE_FEE: 0.0001
+  MESSAGE_FEE: 0.00000294
 };
 
 let walletData = {
