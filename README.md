@@ -7,7 +7,6 @@ This README provides step-by-step instructions to set up Wallet Nito on a new ma
 ## Features
 
 - 🔐 **Secure Key Management**: Generate and import private keys with client-side security
-- 📤 **Transaction Management**: Send NITO with automatic UTXO selection and consolidation
 - 🔒 **Encrypted Messaging**: On-chain encrypted messaging system using Noble ECDH + AES-GCM
 - 🌍 **Multi-Language Support**: Interface available in 7 languages (FR, EN, DE, ES, NL, RU, ZH)
 - 📊 **Smart UTXO Management**: Intelligent filtering to preserve messaging data
