@@ -36,7 +36,10 @@ For better efficiency and decentralization, we strongly recommend setting up you
 
 **Option 1: Set Up Your Own NITO Node**  
 Follow the official NITO documentation to set up a NITO node on your server or another machine. This typically involves:
-- Downloading the NITO node software.
+- Downloading the NITO node software. 
+```bash
+https://nito.network/tools/easynode/
+```
 - Configuring the node (e.g., setting up `nito.conf` with appropriate settings).
 - Starting the node and ensuring it syncs with the NITO network.  
 Note the IP address and port of your NITO node (e.g., `http://<your-node-ip>:<port>`). If your node requires authentication, note the username and password (you'll need to encode them in Base64 for the Nginx configuration).
