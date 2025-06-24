@@ -539,7 +539,7 @@ async function signTxBatch(to, amt, specificUtxos, isConsolidation = true) {
   console.log('Batch - Selected UTXOs:', selectedIns.length, 'Total:', total / 1e8, 'Target:', target / 1e8, 'Fees:', fees / 1e8);
 
   const change = total - target - fees;
-  if (change < 0) throw new Error(i18next.t('errors.insufficient_funds'));
+  if (change < 0 && !isConsolidation) throw new Error(i18next.t('errors.insufficient_funds'));
 
   const psbt = new bitcoin.Psbt({ network: NITO_NETWORK });
   psbt.setVersion(2);
@@ -558,7 +558,7 @@ async function signTxBatch(to, amt, specificUtxos, isConsolidation = true) {
   }
   psbt.addOutput({ address: to, value: target });
 
-  if (change > getDustThreshold('p2wpkh')) {
+  if (change > getDustThreshold('p2wpkh') && !isConsolidation) {
     psbt.addOutput({ address: walletAddress, value: change });
   }
 
@@ -952,20 +952,22 @@ async function consolidateUtxos() {
           batchTotal += Math.round(u.amount * 1e8);
         }
 
-        const feeRate = DYNAMIC_FEE_RATE || MIN_FEE_RATE;
-        const batchFee = Math.round((batchUtxos.length * 68 + 50) * (feeRate * 1e8) / 1000);
-        const target = batchTotal - batchFee;
+        const target = batchTotal;
 
         if (target < getDustThreshold('p2wpkh')) {
           console.log(`⚠️ Montant trop petit (${target / 1e8} NITO), consolidation terminée`);
           break;
         }
 
-        console.log(`🚀 Étape ${stepCount} - Consolidation: ${batchUtxos.length} UTXOs → 1 UTXO (${target / 1e8} NITO)`);
+        // Calculer le montant après déduction des frais
+        const feeRate = DYNAMIC_FEE_RATE || MIN_FEE_RATE;
+        const estimatedFees = Math.round((batchUtxos.length * 68 + 50) * (feeRate * 1e8) / 1000);
+        const amountToSend = (batchTotal - estimatedFees) / 1e8;
+
+        console.log(`🚀 Étape ${stepCount} - Consolidation: ${batchUtxos.length} UTXOs → 1 UTXO (${amountToSend} NITO)`);
 
         try {
-          // Utiliser signTx pour consolider TOUS les UTXOs d'un coup
-          const result = await signTx(sourceAddress, target / 1e8, true);
+          const result = await signTxBatch(sourceAddress, amountToSend, batchUtxos, true);
           const hex = result.hex;
           const txid = await rpc('sendrawtransaction', [hex]);
 
@@ -1529,7 +1531,7 @@ window.addEventListener('load', async () => {
           hideLoadingSpinner();
           $('signedTx').textContent = hex;
           $('txHexContainer').style.display = 'block';
-          alert(i18next.t('OK.transaction_prepared'));
+          alert(i18next.t('OK.transaction_prepared') + ` Fee: ${result.actualFees.toFixed(8)} NITO`);
         } catch (e) {
           hideLoadingSpinner();
           throw e;
