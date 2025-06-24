@@ -318,6 +318,14 @@
       0% { transform: translate(-50%, -50%) rotate(0deg); }
       100% { transform: translate(-50%, -50%) rotate(360deg); }
     }
+
+    /* Cacher les frais et sélection d'adresse */
+    #feeNito,
+    label[data-i18n="send_section.debit_label"],
+    #debitAddressType {
+      display: none !important;
+    }
+
   </style>
 </head>
 <body>
