@@ -60,7 +60,7 @@
     "message": "Bericht",
     "from": "Van",
     "content": "Inhoud",
-    "message_placeholder": "Je bericht (max. 5000 tekens)",
+    "message_placeholder": "Je bericht (max. 50000 tekens)",
     "send_button": "📤 Verzenden",
     "clear_button": "🗑️ Wissen",
     "recipient_placeholder": "Bech32-adres van de ontvanger (nito1...)",
