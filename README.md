@@ -177,20 +177,26 @@ server {
     ssl_prefer_server_ciphers on;
     ssl_ciphers EECDH+AESGCM:EDH+AESGCM:AES256+EECDH:AES256+EDH;
 
+    # HSTS to enforce HTTPS
+    add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+
     # Root directory for static files
     root /var/www/wallet-nito;
     index index.html;
 
     # Content Security Policy (CSP)
-    add_header Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline' https://esm.sh https://cdn.jsdelivr.net https://cdnjs.cloudflare.com https://unpkg.com; connect-src 'self' https://wallet-nito.nitopool.fr/api/ https://wallet-nito.nitopool.fr/langs/ https://explorer.nito.network https://explorer.nito.network/ext/gettx/ https://nitoexplorer.org https://nitoexplorer.org/ext/gettx/ https://esm.sh https://cdn.jsdelivr.net https://cdnjs.cloudflare.com; img-src 'self' https://raw.githubusercontent.com; style-src 'self' 'unsafe-inline';";
+    add_header Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline' https://esm.sh https://cdn.jsdelivr.net https://cdnjs.cloudflare.com https://unpkg.com; connect-src 'self' https://<your-domain>/api/ https://<your-domain>/langs/ https://explorer.nito.network https://explorer.nito.network/ext/gettx/ https://nitoexplorer.org https://nitoexplorer.org/ext/gettx/ https://esm.sh https://cdn.jsdelivr.net https://cdnjs.cloudflare.com; img-src 'self' https://raw.githubusercontent.com; style-src 'self' 'unsafe-inline';";
 
-    # Proxy for API requests to your NITO node (via /api/)
+    # Proxy for API requests to your NITO node (via /api/) without cache
     location /api/ {
         proxy_pass <your-node-url>;
         proxy_set_header Authorization "Basic <base64-auth>";
         add_header 'Access-Control-Allow-Origin' '*' always;
         add_header 'Access-Control-Allow-Methods' 'GET, POST, OPTIONS' always;
         add_header 'Access-Control-Allow-Headers' 'Authorization,Content-Type' always;
+        add_header Cache-Control "no-cache, no-store, must-revalidate" always;
+        add_header Pragma "no-cache" always;
+        add_header Expires "0" always;
         if ($request_method = 'OPTIONS') {
             add_header 'Access-Control-Allow-Origin' '*' always;
             add_header 'Access-Control-Allow-Methods' 'GET, POST, OPTIONS' always;
@@ -204,20 +210,28 @@ server {
         proxy_set_header X-Forwarded-Proto $scheme;
     }
 
-    # Routes for counter endpoints
+    # Routes for counter endpoints without cache
     location /api/increment-counter {
         try_files $uri $uri/ /api/counter.php;
+        add_header Cache-Control "no-cache, no-store, must-revalidate" always;
+        add_header Pragma "no-cache" always;
+        add_header Expires "0" always;
     }
 
     location /api/get-counter {
         try_files $uri $uri/ /api/counter.php;
+        add_header Cache-Control "no-cache, no-store, must-revalidate" always;
+        add_header Pragma "no-cache" always;
+        add_header Expires "0" always;
     }
 
-    # Serve translation files with CORS (via /langs/)
+    # Serve translation files with CORS (via /langs/) with cache
     location /langs/ {
         add_header 'Access-Control-Allow-Origin' '*' always;
         add_header 'Access-Control-Allow-Methods' 'GET, OPTIONS' always;
         add_header 'Access-Control-Allow-Headers' 'Content-Type' always;
+        expires 30d;
+        add_header Cache-Control "public, max-age=2592000"; # Adjusted from "immutable" to allow revalidation
         if ($request_method = 'OPTIONS') {
             add_header 'Access-Control-Allow-Origin' '*' always;
             add_header 'Access-Control-Allow-Methods' 'GET, OPTIONS' always;
@@ -228,15 +242,41 @@ server {
         try_files $uri $uri/ =404;
     }
 
-    # Handle PHP scripts
+    # Handle JS/CSS/HTML files without cache (except index.html served via /index.html)
+    location ~* \.(js|css|html)$ {
+        add_header Cache-Control "no-cache, no-store, must-revalidate" always;
+        add_header Pragma "no-cache" always;
+        add_header Expires "0" always;
+        try_files $uri $uri/ =404;
+    }
+
+    # Handle JSON files without cache (except those in /langs/ managed by /langs/)
+    location ~* \.json$ {
+        add_header Cache-Control "no-cache, no-store, must-revalidate" always;
+        add_header Pragma "no-cache" always;
+        add_header Expires "0" always;
+        add_header Content-Type "application/json";
+        try_files $uri $uri/ =404;
+    }
+
+    # Handle PHP scripts without cache
     location ~ \.php$ {
         include snippets/fastcgi-php.conf;
         fastcgi_pass unix:/run/php/php8.1-fpm.sock; # Adjust based on your PHP version (e.g., php8.1-fpm.sock)
         fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;
         include fastcgi_params;
+        add_header Cache-Control "no-cache, no-store, must-revalidate" always;
+        add_header Pragma "no-cache" always;
+        add_header Expires "0" always;
     }
 
-    # Serve other static files (index.html, wallet.js, etc.)
+    # Serve only index.html with cache
+    location = /index.html {
+        expires 30d;
+        add_header Cache-Control "public, max-age=2592000"; # Adjusted from "immutable" to allow revalidation
+    }
+
+    # Root location to handle uncatched requests (redirect to index.html if needed)
     location / {
         try_files $uri $uri/ /index.html;
     }
