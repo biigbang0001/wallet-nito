@@ -60,7 +60,7 @@
     "message": "消息",
     "from": "发件人",
     "content": "内容",
-    "message_placeholder": "您的消息（最多 5000 字符）",
+    "message_placeholder": "您的消息（最多 50000 字符）",
     "send_button": "📤 发送",
     "clear_button": "🗑️ 清除",
     "recipient_placeholder": "收件人 Bech32 地址 (nito1...)",
