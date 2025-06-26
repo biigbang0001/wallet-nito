@@ -944,7 +944,7 @@ async function consolidateUtxos() {
         }
 
         // Prendre TOUS les UTXOs restants
-        const batchUtxos = currentUtxos;
+        const batchUtxos = currentUtxos.slice(0, 500);
 
         // Calculer le montant total
         let batchTotal = 0;
@@ -976,8 +976,8 @@ async function consolidateUtxos() {
           lastTxid = txid;
 
           // Attendre la confirmation
-          console.log('⏳ Attente confirmation (15 secondes)...');
-          await new Promise(resolve => setTimeout(resolve, 15000));
+          console.log('⏳ Attente confirmation (5 secondes)...');
+          await new Promise(resolve => setTimeout(resolve, 5000));
 
           // Recalculer les UTXOs
           const previousUtxosCount = currentUtxos.length;
