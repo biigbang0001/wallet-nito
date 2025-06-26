@@ -225,13 +225,14 @@ server {
         add_header Expires "0" always;
     }
 
-    # Serve translation files with CORS (via /langs/) with cache
+    # Serve translation files with CORS (via /langs/) without cache
     location /langs/ {
         add_header 'Access-Control-Allow-Origin' '*' always;
         add_header 'Access-Control-Allow-Methods' 'GET, OPTIONS' always;
         add_header 'Access-Control-Allow-Headers' 'Content-Type' always;
-        expires 30d;
-        add_header Cache-Control "public, max-age=2592000"; # Adjusted from "immutable" to allow revalidation
+        add_header Cache-Control "no-cache, no-store, must-revalidate" always;
+        add_header Pragma "no-cache" always;
+        add_header Expires "0" always;
         if ($request_method = 'OPTIONS') {
             add_header 'Access-Control-Allow-Origin' '*' always;
             add_header 'Access-Control-Allow-Methods' 'GET, OPTIONS' always;
@@ -273,7 +274,7 @@ server {
     # Serve only index.html with cache
     location = /index.html {
         expires 30d;
-        add_header Cache-Control "public, max-age=2592000"; # Adjusted from "immutable" to allow revalidation
+        add_header Cache-Control "public, max-age=2592000";
     }
 
     # Root location to handle uncatched requests (redirect to index.html if needed)
