@@ -60,7 +60,7 @@
     "message": "Mensaje",
     "from": "De",
     "content": "Contenido",
-    "message_placeholder": "Su mensaje (máx. 5000 caracteres)",
+    "message_placeholder": "Su mensaje (máx. 50000 caracteres)",
     "send_button": "📤 Enviar",
     "clear_button": "🗑️ Borrar",
     "recipient_placeholder": "Dirección Bech32 del destinatario (nito1...)",
