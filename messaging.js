@@ -700,51 +700,97 @@ class NitoMessaging {
         const preparedTransactions = await Promise.all(transactionPromises);
         console.log(i18next.t('messaging_debug.transactions_prepared'));
 
-        // Envoyer les transactions par lots pour éviter la surcharge
-        const BATCH_SIZE = chunks.length;
+        // Envoyer les transactions par lots avec retry automatique
+        const BATCH_SIZE = 100;
         const results = [];
+        let pendingTransactions = [...preparedTransactions];
 
-        for (let batchStart = 0; batchStart < preparedTransactions.length; batchStart += BATCH_SIZE) {
-          const batch = preparedTransactions.slice(batchStart, batchStart + BATCH_SIZE);
+        while (pendingTransactions.length > 0) {
+          const batch = pendingTransactions.slice(0, BATCH_SIZE);
+          const currentBatch = Math.ceil((preparedTransactions.length - pendingTransactions.length + batch.length) / BATCH_SIZE);
+          const totalBatches = Math.ceil(preparedTransactions.length / BATCH_SIZE);
 
-          console.log(i18next.t('messaging_debug.sending_batch', {
-            current: Math.floor(batchStart / BATCH_SIZE) + 1,
-            total: Math.ceil(preparedTransactions.length / BATCH_SIZE),
-            count: batch.length
-          }));
+          console.log(`📤 Lot ${currentBatch}/${totalBatches}: ${batch.length} transactions (${pendingTransactions.length} restantes)`);
 
-          // Envoyer ce lot en parallèle
+          // Envoyer ce lot en parallèle avec retry
           const batchPromises = batch.map(async (transaction) => {
-            try {
-              this.updateProgressIndicator(transaction.chunkIndex + 1, chunks.length, i18next.t('progress_indicators.sending'));
+            let attempts = 0;
+            const maxAttempts = 10; // Maximum 10 tentatives par chunk
 
-              const txid = await window.rpc("sendrawtransaction", [transaction.hex]);
-              console.log(`✅ Chunk ${transaction.chunkIndex + 1}/${chunks.length} envoyé: ${txid}`);
+            while (attempts < maxAttempts) {
+              try {
+                this.updateProgressIndicator(
+                  preparedTransactions.length - pendingTransactions.length + 1,
+                  preparedTransactions.length,
+                  `Envoi (tentative ${attempts + 1})`
+                );
 
-              return {
-                success: true,
-                txid: txid,
-                chunkIndex: transaction.chunkIndex
-              };
-            } catch (error) {
-              console.error(`❌ Erreur chunk ${transaction.chunkIndex + 1}:`, error.message);
-              return {
-                success: false,
-                error: error.message,
-                chunkIndex: transaction.chunkIndex
-              };
+                const txid = await window.rpc("sendrawtransaction", [transaction.hex]);
+                console.log(`✅ Chunk ${transaction.chunkIndex + 1}/${chunks.length} envoyé: ${txid}`);
+
+                return {
+                  success: true,
+                  txid: txid,
+                  chunkIndex: transaction.chunkIndex,
+                  transaction: transaction
+                };
+              } catch (error) {
+                attempts++;
+
+                if (error.message.includes("already in block chain")) {
+                  // Transaction déjà confirmée = succès !
+                  console.log(`✅ Chunk ${transaction.chunkIndex + 1} déjà confirmé`);
+                  return {
+                    success: true,
+                    txid: "already_confirmed",
+                    chunkIndex: transaction.chunkIndex,
+                    transaction: transaction
+                  };
+                }
+
+                console.warn(`⚠️ Tentative ${attempts}/${maxAttempts} échouée pour chunk ${transaction.chunkIndex + 1}: ${error.message}`);
+
+                if (attempts < maxAttempts) {
+                  // Attendre entre 1 et 3 secondes avant retry
+                  const delayMs = Math.floor(Math.random() * 2000) + 1000;
+                  await this.delay(delayMs);
+                }
+              }
             }
+
+            // Si toutes les tentatives ont échoué
+            console.error(`❌ Chunk ${transaction.chunkIndex + 1} abandonné après ${maxAttempts} tentatives`);
+            return {
+              success: false,
+              error: "Max attempts reached",
+              chunkIndex: transaction.chunkIndex,
+              transaction: transaction
+            };
           });
 
           const batchResults = await Promise.all(batchPromises);
-          results.push(...batchResults);
 
-          // Pause entre les lots (sauf pour le dernier)
-          if (batchStart + BATCH_SIZE < preparedTransactions.length) {
-            console.log(i18next.t('messaging_debug.batch_pause'));
-            await this.delay(100);
+          // Séparer les succès des échecs
+          const successes = batchResults.filter(r => r.success);
+          const failures = batchResults.filter(r => !r.success);
+
+          results.push(...successes);
+
+          // Retirer les transactions réussies de la liste pending
+          pendingTransactions = pendingTransactions.filter(t =>
+            !successes.some(s => s.chunkIndex === t.chunkIndex)
+          );
+
+          console.log(`✅ Lot ${currentBatch} terminé: ${successes.length} succès, ${failures.length} échecs, ${pendingTransactions.length} restantes`);
+
+          // Pause entre les lots si il en reste
+          if (pendingTransactions.length > 0) {
+            const delayMs = Math.floor(Math.random() * 2000) + 1000; // 1-3 secondes
+            console.log(`⏸️ Pause ${delayMs}ms avant le prochain lot...`);
+            await this.delay(delayMs);
           }
         }
+
 
         // Analyser les résultats
         const successfulResults = results.filter(r => r.success);
