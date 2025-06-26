@@ -60,7 +60,7 @@
     "message": "Nachricht",
     "from": "Von",
     "content": "Inhalt",
-    "message_placeholder": "Ihre Nachricht (max. 5000 Zeichen)",
+    "message_placeholder": "Ihre Nachricht (max. 50000 Zeichen)",
     "send_button": "📤 Senden",
     "clear_button": "🗑️ Löschen",
     "recipient_placeholder": "Bech32-Adresse des Empfängers (nito1...)",
