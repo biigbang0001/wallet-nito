@@ -1366,7 +1366,13 @@ window.addEventListener('load', async () => {
           Bech32: <span id="bech32Address">${addresses.bech32}</span> <button class="copy-btn" id="copyBech32Addr">📋</button> (Solde: ${bech32Balance.toFixed(8)} NITO)
         `);
         $('walletBalance').textContent = bech32Balance.toFixed(8);
-        console.log('Wallet imported:', addresses);
+
+        const filteredAddresses = {
+          legacy: addresses.legacy,
+          p2sh: addresses.p2sh,
+          bech32: addresses.bech32,
+        };
+        console.log('Wallet imported (public info only):', filteredAddresses)
 
         // Exposition variables pour messagerie
         window.walletKeyPair = walletKeyPair;
