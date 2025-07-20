@@ -1,5 +1,3 @@
-bitcoin.initEccLib(tinysecp);
-
 import * as bitcoin from 'https://esm.sh/bitcoinjs-lib@6.1.5?bundle';
 import * as tinysecp from 'https://esm.sh/tiny-secp256k1@2.2.3';
 import ECPairFactory from 'https://esm.sh/ecpair@3.0.0';
@@ -7,6 +5,7 @@ import { Buffer } from 'https://esm.sh/buffer@6.0.3';
 import "./messaging.js";
 import * as bip39 from 'https://esm.sh/bip39@3.1.0';
 import bip32Factory from 'https://esm.sh/bip32@4.0.0';
+bitcoin.initEccLib(tinysecp);
 window.Buffer = Buffer;
 
 const bip32 = bip32Factory(tinysecp);
