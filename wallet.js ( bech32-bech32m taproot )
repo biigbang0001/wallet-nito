@@ -1,11 +1,12 @@
+bitcoin.initEccLib(tinysecp);
+
 import * as bitcoin from 'https://esm.sh/bitcoinjs-lib@6.1.5?bundle';
-import * as tinysecp from 'https://esm.sh/tiny-secp256k1@2.2.3';
+import * as tinysecp from 'https://esm.sh/@bitcoin-js/tiny-secp256k1-asmjs@2.2.3';
 import ECPairFactory from 'https://esm.sh/ecpair@3.0.0';
 import { Buffer } from 'https://esm.sh/buffer@6.0.3';
 import "./messaging.js";
 import * as bip39 from 'https://esm.sh/bip39@3.1.0';
 import bip32Factory from 'https://esm.sh/bip32@4.0.0';
-bitcoin.initEccLib(tinysecp);
 window.Buffer = Buffer;
 
 const bip32 = bip32Factory(tinysecp);
@@ -481,8 +482,8 @@ async function balance(addr) {
 
 function getAddressType(addr) {
   try {
-    if (addr.startsWith('nito1p')) return 'p2tr';
-    if (addr.startsWith('nito1q')) return 'p2wpkh';
+    if (addr.startsWith('nito1q')) return 'p2tr';
+    if (addr.startsWith('nito1')) return 'p2wpkh';
     if (addr.startsWith('3')) return 'p2sh';
     if (addr.startsWith('1')) return 'p2pkh';
     return 'unknown';
@@ -1636,11 +1637,11 @@ window.addEventListener('load', async () => {
 
         try {
           let result;
-          if (sourceType === 'bech32') {
+          if (sourceType === 'bech32' && destType === 'p2wpkh') {
             walletAddress = bech32Address;
             walletPublicKey = walletPublicKey; // Bech32 pubkey
             walletKeyPair = walletKeyPair; // Bech32 keypair
-            result = await signTxWithPSBT(dest, amt);
+            result = await signTx(dest, amt);
           } else if (sourceType === 'p2tr') {
             walletAddress = taprootAddress;
             walletPublicKey = taprootPublicKey;
