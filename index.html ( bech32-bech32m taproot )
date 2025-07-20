@@ -1,1706 +1,549 @@
-bitcoin.initEccLib(tinysecp);
-
-import * as bitcoin from 'https://esm.sh/bitcoinjs-lib@6.1.5?bundle';
-import * as tinysecp from 'https://esm.sh/tiny-secp256k1@2.2.3';
-import ECPairFactory from 'https://esm.sh/ecpair@3.0.0';
-import { Buffer } from 'https://esm.sh/buffer@6.0.3';
-import "./messaging.js";
-import * as bip39 from 'https://esm.sh/bip39@3.1.0';
-import bip32Factory from 'https://esm.sh/bip32@4.0.0';
-window.Buffer = Buffer;
-
-const bip32 = bip32Factory(tinysecp);
-
-// === Extension HD ===
-let hdWallet = null;
-let currentMnemonic = null;
-
-const ECPair = ECPairFactory(tinysecp);
-
-const NITO_NETWORK = {
-  messagePrefix: '\x18Nito Signed Message:\n',
-  bech32: 'nito',
-  bip32: { public: 0x0488B21E, private: 0x0488ADE4 },
-  pubKeyHash: 0x00,
-  scriptHash: 0x05,
-  wif: 0x80
-};
-
-const NODE_URL = '/api/';
-let MIN_FEE_RATE = 0.00001;
-let DYNAMIC_FEE_RATE = null;
-const DUST_RELAY_AMOUNT = 3000;
-const DUST_AMOUNT = {
-  p2pkh: 546,
-  p2wpkh: 294,
-  p2sh: 540,
-  p2tr: 330
-};
-const MIN_CONSOLIDATION_FEE = 0.00005;
-const MAX_UTXOS_PER_BATCH = 500;
-
-let walletAddress = '';
-let legacyAddress = '';
-let p2shAddress = '';
-let bech32Address = '';
-let taprootAddress = '';
-let walletPublicKey = null;
-let walletKeyPair = null;
-let taprootPublicKey = null;
-let taprootKeyPair = null;
-let consolidateButtonInjected = false;
-let lastActionTime = null;
-let inactivityTimeout = null;
-let timerInterval = null;
-
-// Initialiser i18next avec l'objet global window.i18next
-i18next
-  .use(window.i18nextHttpBackend)
-  .init({
-    lng: 'fr',
-    fallbackLng: 'en',
-    backend: {
-      loadPath: '/langs/{{lng}}.json'
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8"/>
+  <!-- Balise viewport pour définir l'échelle initiale sur mobile -->
+  <meta name="viewport" content="width=device-width, initial-scale=0.8, user-scalable=yes"/>
+  <title>Wallet NITO</title>
+  <link rel="icon" href="https://raw.githubusercontent.com/biigbang0001/NitoNode-Explorer/refs/heads/main/favicon-192.png"/>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.1.6/purify.min.js"></script>
+  <script src="https://unpkg.com/i18next@23.15.1/i18next.min.js"></script>
+  <script src="https://unpkg.com/i18next-http-backend@2.6.1/i18nextHttpBackend.min.js"></script>
+  <style>
+    body {
+      font-family: Arial;
+      margin: 20px;
+      background: linear-gradient(to bottom, #e6f0fa, #b3d4fc);
+      transition: background 0.3s, color 0.3s;
+      position: relative;
+      overflow-x: hidden;
     }
-  }, (err, t) => {
-    if (err) {
-      console.error('Erreur i18next:', err);
-      return;
+    body.dark-mode {
+      background: linear-gradient(to bottom, #2c3e50, #1a252f);
+      color: #e0e0e0;
     }
-    updateTranslations();
-  });
-
-function updateTranslations() {
-  // Traduire les éléments avec l'attribut data-i18n
-  document.querySelectorAll('[data-i18n]').forEach(element => {
-    const key = element.getAttribute('data-i18n');
-    if (key.startsWith('[placeholder]')) {
-      const actualKey = key.replace('[placeholder]', '');
-      element.setAttribute('placeholder', i18next.t(actualKey));
-    } else {
-      element.textContent = i18next.t(key);
+    h1 {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      color: #1e3a8a;
     }
-  });
+    body.dark-mode h1 {
+      color: #64b5f6;
+    }
+    h1 img {
+      width: 40px;
+      height: 40px;
+      margin-right: 10px;
+    }
+    .section {
+      background: #fff;
+      padding: 20px;
+      margin: 10px 0;
+      border-radius: 8px;
+      box-shadow: 0 2px 4px rgba(0,0,0,.1);
+    }
+    body.dark-mode .section {
+      background: #37474f;
+      box-shadow: 0 2px 4px rgba(0,0,0,.3);
+    }
+    .warning {
+      background: #ffcccb;
+      padding: 10px;
+      border-radius: 5px;
+      margin: 10px 0;
+    }
+    body.dark-mode .warning {
+      background: #e57373;
+    }
+    button {
+      background: #1e40af;
+      color: #fff;
+      border: 0;
+      padding: 10px 20px;
+      border-radius: 5px;
+      cursor: pointer;
+      margin: 5px;
+    }
+    body.dark-mode button {
+      background: #1976d2;
+    }
+    button:hover {
+      background: #1e3a8a;
+    }
+    body.dark-mode button:hover {
+      background: #1565c0;
+    }
+    button:disabled {
+      background: #94a3b8;
+      cursor: not-allowed;
+    }
+    body.dark-mode button:disabled {
+      background: #455a64;
+    }
+    input, select, textarea {
+      width: 100%;
+      padding: 8px;
+      margin: 5px 0;
+      border: 1px solid #93c5fd;
+      border-radius: 5px;
+      box-sizing: border-box;
+    }
+    body.dark-mode input, body.dark-mode select, body.dark-mode textarea {
+      background: #455a64;
+      color: #e0e0e0;
+      border: 1px solid #90caf9;
+    }
+    textarea {
+      resize: vertical;
+      min-height: 100px;
+    }
+    p, li {
+      color: #1e3a8a;
+      margin: 5px 0;
+    }
+    body.dark-mode p, body.dark-mode li {
+      color: #e0e0e0;
+    }
+    ul {
+      list-style: none;
+      padding: 0;
+    }
+    li {
+      background: #f0f8ff;
+      padding: 10px;
+      margin: 5px 0;
+      border-radius: 5px;
+    }
+    body.dark-mode li {
+      background: #546e7a;
+    }
+    .copy-btn {
+      padding: 5px 10px;
+      font-size: 14px;
+      margin-left: 5px;
+    }
+    .reveal-btn {
+      padding: 5px 10px;
+      font-size: 14px;
+      margin-left: 5px;
+      background: #4b5e40;
+    }
+    body.dark-mode .reveal-btn {
+      background: #6b8e23;
+    }
+    .tx-hex {
+      font-family: monospace;
+      font-size: 12px;
+      word-break: break-all;
+      background: #f0f0f0;
+      padding: 10px;
+      border-radius: 5px;
+      margin-top: 10px;
+    }
+    body.dark-mode .tx-hex {
+      background: #455a64;
+    }
+    .consolidate-container {
+      text-align: center;
+      margin-top: 10px;
+    }
+    .consolidate-button {
+      background: transparent;
+      border: 1px solid #1e3a8a;
+      color: #1e3a8a;
+      padding: 8px 16px;
+      border-radius: 20px;
+      cursor: pointer;
+      font-size: 14px;
+    }
+    body.dark-mode .consolidate-button {
+      border: 1px solid #90caf9;
+      color: #90caf9;
+    }
+    .consolidate-button:hover {
+      background: #e6f0fa;
+    }
+    body.dark-mode .consolidate-button:hover {
+      background: #37474f;
+    }
+    .theme-toggle {
+      position: fixed;
+      top: 10px;
+      right: 10px;
+      background: #1e40af;
+      border: none;
+      font-size: 24px;
+      cursor: pointer;
+      z-index: 1000;
+      color: #fff;
+      padding: 5px 10px;
+      border-radius: 5px;
+    }
+    body.dark-mode .theme-toggle {
+      background: #ffffff;
+      color: #1e3a8a;
+    }
+    .dark-mode .popup {
+      background: #37474f;
+      color: #e0e0e0;
+    }
+    .blurred {
+      filter: blur(5px);
+      user-select: none;
+    }
+    .blurred-input {
+      filter: blur(5px);
+    }
+    .counter-box {
+      text-align: center;
+      margin: 10px 0;
+      padding: 10px;
+      background: #f0f8ff;
+      border-radius: 8px;
+      box-shadow: 0 2px 4px rgba(0,0,0,.1);
+      font-size: 16px;
+      color: #1e3a8a;
+    }
+    body.dark-mode .counter-box {
+      background: #546e7a;
+      color: #e0e0e0;
+    }
+    /* Ajustement du zoom initial sur mobile */
+    @media (max-width: 768px) {
+      html, body {
+        zoom: 0.8;
+      }
+    }
 
-  // Traduire spécifiquement le titre <h1> (contient une image)
-  const h1 = document.querySelector('h1');
-  if (h1 && h1.childNodes[1]) {
-    h1.childNodes[1].textContent = i18next.t('title');
-  }
+    /* Styles pour la messagerie */
+    .message-list {
+      max-height: 300px;
+      overflow-y: auto;
+      margin-top: 10px;
+      padding: 5px;
+      border: 1px solid #93c5fd;
+      border-radius: 5px;
+      background: #f8fafc;
+    }
+    body.dark-mode .message-list {
+      background: #455a64;
+      border: 1px solid #90caf9;
+    }
+    .message-item {
+      padding: 10px;
+      margin: 5px 0;
+      background: #e0f2fe;
+      border-radius: 5px;
+      border-left: 4px solid #2196f3;
+      word-break: break-word;
+    }
+    body.dark-mode .message-item {
+      background: #546e7a;
+      color: #e0e0e0;
+    }
+    .message-item.error {
+      border-left-color: #e57373;
+      background: #ffebee;
+    }
+    body.dark-mode .message-item.error {
+      background: #5d4037;
+    }
+    .message-item.read {
+      border-left-color: #4caf50;
+      background: #e8f5e8;
+    }
+    body.dark-mode .message-item.read {
+      background: #2e7d32;
+    }
+    .message-status {
+      font-size: 12px;
+      color: #666;
+      margin-top: 5px;
+      font-style: italic;
+    }
+    body.dark-mode .message-status {
+      color: #bbb;
+    }
+    .char-counter {
+      font-size: 12px;
+      color: #666;
+      margin-top: 5px;
+      text-align: right;
+    }
+    body.dark-mode .char-counter {
+      color: #bbb;
+    }
+    .char-counter.over-limit {
+      color: #e57373;
+      font-weight: bold;
+    }
+    .send-form {
+      margin-top: 10px;
+      padding: 15px;
+      border: 1px solid #93c5fd;
+      border-radius: 5px;
+      background: #f0f8ff;
+      display: none;
+    }
+    body.dark-mode .send-form {
+      background: #455a64;
+      border: 1px solid #90caf9;
+    }
+    .unread-counter {
+      display: none;
+      background: #e57373;
+      color: white;
+      padding: 5px 10px;
+      border-radius: 15px;
+      font-size: 14px;
+      margin-bottom: 10px;
+      text-align: center;
+    }
+    #loadingSpinner {
+      display: none;
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      border: 4px solid #f3f3f3;
+      border-top: 4px solid #1e3a8a;
+      border-radius: 50%;
+      width: 30px;
+      height: 30px;
+      animation: spin 1s linear infinite;
+      z-index: 1001;
+    }
+    @keyframes spin {
+      0% { transform: translate(-50%, -50%) rotate(0deg); }
+      100% { transform: translate(-50%, -50%) rotate(360deg); }
+    }
 
-  // Traduire le contenu de l'élément warning avec HTML
-  const warning = document.querySelector('.warning');
-  if (warning) {
-    warning.innerHTML = DOMPurify.sanitize(i18next.t('generate_section.warning'));
-  }
+    /* Cacher les frais */
+    #feeNito {
+      display: none !important;
+    }
 
-  // Traduire le bouton de consolidation s'il existe
-  const consolidateButton = document.getElementById('consolidateButton');
-  if (consolidateButton) {
-    consolidateButton.textContent = i18next.t('send_section.consolidate_button');
-  }
-}
+    /* Masquer le label pour adresse à débiter */
+    label[data-i18n="send_section.debit_label"] {
+      display: none !important;
+    }
 
-async function rpc(method, params) {
-  const conflictMethods = ['scantxoutset'];
+  </style>
+</head>
+<body>
+  <div id="loadingSpinner"></div>
+  <button class="theme-toggle" id="themeToggle">🌙</button>
 
-  if (conflictMethods.includes(method)) {
-    while (true) {
-      try {
-        const res = await fetch(NODE_URL, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ jsonrpc: '2.0', method, params, id: Date.now() })
-        });
-        const text = await res.text();
-        console.log('RPC raw response:', text);
-        if (!res.ok) throw new Error(`HTTP Error: ${res.status} - ${text}`);
-        const data = JSON.parse(text);
-        if (data.error) throw new Error(data.error.message);
-        return data.result;
+  <div class="section">
+    <label for="languageSelect" data-i18n="language_label">Langue :</label>
+    <select id="languageSelect">
+      <option value="fr" data-i18n="languages.fr">Français</option>
+      <option value="en" data-i18n="languages.en">English</option>
+      <option value="de" data-i18n="languages.de">Deutsch</option>
+      <option value="es" data-i18n="languages.es">Español</option>
+      <option value="nl" data-i18n="languages.nl">Nederlands</option>
+      <option value="ru" data-i18n="languages.ru">Русский</option>
+      <option value="zh" data-i18n="languages.zh">中文</option>
+    </select>
+  </div>
 
-      } catch (e) {
-        if (e.message.includes("Scan already in progress")) {
-          const delay = Math.random() * 3000 + 2000;
-          console.log(`⏳ ${method} en attente, retry dans ${Math.round(delay/1000)}s...`);
-          await new Promise(resolve => setTimeout(resolve, delay));
-          continue;
+  <h1><img src="https://raw.githubusercontent.com/biigbang0001/NitoNode-Explorer/refs/heads/main/favicon-192.png" alt="">Wallet NITO</h1>
+
+  <!-- Encart pour le compteur -->
+  <div class="counter-box">
+    <span data-i18n="counter.keys_generated">🔑 Clés Nito générées :</span> <span id="keyCounter">0</span>
+  </div>
+
+  <div class="section">
+    <h2 data-i18n="generate_section.title">🎯 Génération de clé privée Nito</h2>
+    <button id="generateButton" data-i18n="generate_section.generate_button">🎲 Générer</button>
+    <p><span data-i18n="generate_section.private_key_hex">Clé privée (hex) :</span> <span id="privateKeyHex" class="blurred"></span> <button class="copy-btn" id="copyGenHex" data-i18n="generate_section.copy">📋</button> <button class="reveal-btn" id="revealHex" data-i18n="generate_section.reveal">👁️ Révéler</button></p>
+    <p><span data-i18n="generate_section.private_key_wif">WIF :</span> <span id="privateKey" class="blurred"></span> <button class="copy-btn" id="copyGenWif" data-i18n="generate_section.copy">📋</button> <button class="reveal-btn" id="revealWif" data-i18n="generate_section.reveal">👁️ Révéler</button></p>
+    <p><span data-i18n="generate_section.hd_master_key">🔐 xprv HD :</span> <span id="hdMasterKey" class="blurred"></span> <button class="copy-btn" id="copyHdKey" data-i18n="generate_section.copy">📋</button> <button class="reveal-btn" id="revealHdKey" data-i18n="generate_section.reveal">👁️ Révéler</button></p>
+    <p><span data-i18n="generate_section.mnemonic_phrase">🎯 mnémonique HD :</span> <span id="mnemonicPhrase" class="blurred"></span> <button class="copy-btn" id="copyMnemonic" data-i18n="generate_section.copy">📋</button> <button class="reveal-btn" id="revealMnemonic" data-i18n="generate_section.reveal">👁️ Révéler</button></p>
+    <p><span id="generatedAddress"></span></p>
+    <p class="warning" data-i18n="generate_section.warning"><span id="inactivityTimer">[10:00]</span> ⚠️ Sauvegardez la clé privée immédiatement ! Elle sera effacée après 10 minutes d'inactivité ou après un rechargement de la page.</p>
+  </div>
+
+  <div class="section">
+    <h2 data-i18n="import_section.title">📥 Importer un wallet</h2>
+    <div>
+      <textarea id="privateKeyWIF" placeholder="WIF/Hex/mnémonique HD/XPRV HD"
+                style="width: 100%; height: 80px; resize: vertical;"></textarea>
+      <button class="reveal-btn" id="revealWifInput" data-i18n="generate_section.reveal">👁️ Révéler</button>
+    </div>
+    <button id="importWalletButton" data-i18n="import_section.import_button">📥 Importer</button>
+    <p><span id="walletAddress"></span></p>
+    <p><span data-i18n="import_section.balance">Solde :</span> <span id="walletBalance">0.00000000</span> NITO <button id="refreshBalanceButton" data-i18n="import_section.refresh_button">🔄</button></p>
+  </div>
+
+  <div class="section">
+    <h2 data-i18n="send_section.title">📤 Envoyer NITO</h2>
+    <input id="destinationAddress" placeholder="Adresse destinataire" data-i18n="[placeholder]send_section.destination_placeholder"/>
+    <input id="amountNito" type="number" step="0.00000001" placeholder="Montant (NITO)" data-i18n="[placeholder]send_section.amount_placeholder"/>
+    <button id="maxButton" type="button" class="copy-btn" style="margin-left: 5px; background: #4b5e40;" data-i18n="max_button.text">MAX</button>
+    <input id="feeNito" type="number" step="0.00000001" placeholder="Frais (NITO)" value="0.0001" data-i18n="[placeholder]send_section.fee_placeholder"/>
+    <label data-i18n="send_section.debit_label">Adresse à débiter :</label>
+    <select id="debitAddressType">
+      <option value="bech32" selected data-i18n="send_section.bech32_option">Bech32</option>
+      <option value="p2tr">Bech32m (Taproot)</option>
+    </select>
+    <button id="prepareTxButton" data-i18n="send_section.prepare_button">📝 Préparer</button>
+    <button id="broadcastTxButton" data-i18n="send_section.broadcast_button">✅ Diffuser transaction</button>
+    <button id="cancelTxButton" data-i18n="send_section.cancel_button">❌ Annuler</button>
+    <div class="consolidate-container">
+    </div>
+    <div class="tx-hex" style="display:none" id="txHexContainer">
+      <p data-i18n="send_section.signed_tx">Transaction signée (hex) :</p>
+      <span id="signedTx"></span>
+      <button class="copy-btn" id="copyTxHex" data-i18n="send_section.copy_tx">📋 Copier</button>
+    </div>
+  </div>
+
+  <!-- NOUVELLE SECTION MESSAGERIE -->
+  <div class="section">
+    <h2 data-i18n="encrypted_messaging.title">🔒 Messagerie cryptée</h2>
+
+    <!-- Publication de clé publique -->
+    <button id="publishPubkeyButton" data-i18n="encrypted_messaging.publish_pubkey">🔑 Publier ma clé publique</button>
+    <p style="font-size: 14px; color: #666; margin-top: 5px;">
+      📋 <span data-i18n="encrypted_messaging.publish_info">Publiez votre clé publique une fois pour permettre aux autres de vous envoyer des messages cryptés.</span>
+    </p>
+
+    <hr style="margin: 20px 0; border: none; border-top: 1px solid #e0e0e0;">
+
+    <!-- Écriture de message -->
+    <h3 data-i18n="encrypted_messaging.write_title">✍️ Écrire un message</h3>
+    <textarea id="messageInput" maxlength="50000" placeholder="Votre message (max 50000 caractères)" data-i18n="[placeholder]encrypted_messaging.message_placeholder"></textarea>
+    <p class="char-counter" id="messageCharCounter">0/50000 </p>
+
+    <div style="margin-top: 10px;">
+      <button id="sendMessageButton" data-i18n="encrypted_messaging.send_button">📤 Envoyer</button>
+      <button id="clearMessageButton" data-i18n="encrypted_messaging.clear_button">🗑️ Effacer</button>
+    </div>
+
+    <!-- Formulaire d'envoi (masqué par défaut) -->
+    <div id="sendMessageForm" class="send-form">
+      <h4 data-i18n="messaging_recipient_title">📧 Destinataire du message</h4>
+      <input id="recipientAddress" placeholder="Adresse bech32 du destinataire (nito1...)" data-i18n="[placeholder]encrypted_messaging.recipient_placeholder"/>
+      <p id="sendMessageCost" class="char-counter" data-i18n="messaging_estimated_cost">Coût estimé: 0.0001 NITO (1 transaction)</p>
+      <div style="margin-top: 10px;">
+        <button id="confirmSendButton" data-i18n="encrypted_messaging.validate_button">✅ Confirmer l'envoi</button>
+        <button id="cancelSendButton" data-i18n="encrypted_messaging.cancel_button">❌ Annuler</button>
+      </div>
+    </div>
+
+    <hr style="margin: 20px 0; border: none; border-top: 1px solid #e0e0e0;">
+
+    <!-- Lecture des messages -->
+    <h3 data-i18n="encrypted_messaging.read_title">📬 Lire les messages</h3>
+    <button id="refreshMessagesButton" data-i18n="encrypted_messaging.refresh_messages">🔄 Actualiser les messages</button>
+
+    <!-- Compteur de messages non lus -->
+    <div id="unreadMessages" class="unread-counter">
+      <span id="unreadCount">0</span> 📧 <span data-i18n="encrypted_messaging.unread_messages">messages non lus</span>
+    </div>
+
+    <!-- Liste des messages -->
+    <div id="messageList" class="message-list" style="display: none;">
+      <div class="message-item">Aucun message reçu</div>
+    </div>
+  </div>
+
+  <!-- Script pour réinitialiser le zoom sur mobile -->
+  <script>
+    // Détecter si l'appareil est un mobile
+    const isMobile = /Mobi|Android|iPhone|iPad|iPod|Opera Mini|IEMobile|WPDesktop/.test(navigator.userAgent);
+
+    if (isMobile) {
+      let lastScale = 1;
+      let isZooming = false;
+
+      // Écouter les événements de toucher pour détecter un zoom
+      document.addEventListener('touchstart', (e) => {
+        if (e.touches.length === 2) {
+          isZooming = true;
         }
-        throw e;
-      }
-    }
-  } else {
-    try {
-      const res = await fetch(NODE_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ jsonrpc: '2.0', method, params, id: Date.now() })
       });
-      const text = await res.text();
-      console.log('RPC raw response:', text);
-      if (!res.ok) throw new Error(`HTTP Error: ${res.status} - ${text}`);
-      const data = JSON.parse(text);
-      if (data.error) throw new Error(data.error.message);
-      return data.result;
-    } catch (e) {
-      console.error('RPC Error:', method, e);
-      throw e;
-    }
-  }
-}
 
-// Fonction pour récupérer la valeur du compteur
-async function fetchCounter() {
-  try {
-    const res = await fetch('/api/get-counter', { method: 'GET' });
-    if (!res.ok) throw new Error(`HTTP Error: ${res.status}`);
-    const data = await res.json();
-    return data.count;
-  } catch (e) {
-    console.error('Error fetching counter:', e);
-    return 0; // Valeur par défaut en cas d'erreur
-  }
-}
-
-// Fonction pour incrémenter le compteur
-async function incrementCounter() {
-  try {
-    const res = await fetch('/api/increment-counter', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'increment' })
-    });
-    if (!res.ok) throw new Error(`HTTP Error: ${res.status}`);
-    const data = await res.json();
-    return data.count;
-  } catch (e) {
-    console.error('Error incrementing counter:', e);
-    return null;
-  }
-}
-
-// Mettre à jour l'affichage du compteur
-async function updateCounterDisplay() {
-  const counterElement = document.getElementById('keyCounter');
-  if (counterElement) {
-    const count = await fetchCounter();
-    counterElement.textContent = count;
-  }
-}
-
-// NOUVELLE FONCTION: Filtrer les UTXOs avec OP_RETURN
-async function filterOpReturnUtxos(utxos) {
-  // Filtrage simple par montant minimum pour éviter les UTXOs de messaging
-  const filteredUtxos = utxos.filter(utxo => utxo.amount >= 0.000003);
-  console.log(`UTXOs filtrés: ${filteredUtxos.length}/${utxos.length} (minimum 0.000003 NITO)`);
-  return filteredUtxos;
-}
-
-async function showSuccessPopup(txid) {
-  const body = document.body;
-  let progress = 0;
-  const explorerUrl = await getExplorerUrl(txid);
-  const popup = document.createElement('div');
-  popup.className = 'popup';
-  popup.style.position = 'fixed';
-  popup.style.top = '50%';
-  popup.style.left = '50%';
-  popup.style.transform = 'translate(-50%, -50%)';
-  popup.style.background = body.classList.contains('dark-mode') ? '#37474f' : 'white';
-  popup.style.padding = '20px';
-  popup.style.border = '1px solid black';
-  popup.style.zIndex = '1000';
-  popup.style.color = body.classList.contains('dark-mode') ? '#e0e0e0' : '#1e3a8a';
-  popup.innerHTML = DOMPurify.sanitize(`
-    <p>${i18next.t('popup.success.message')}</p>
-    <p>${i18next.t('popup.success.progress')} <span id="progress"></span>%</p>
-    <p>${i18next.t('popup.success.txid')} <span id="txidLink">${txid}</span></p>
-    <button id="closeSuccessPopup">${i18next.t('popup.success.close')}</button>
-  `);
-  document.body.appendChild(popup);
-
-  const progressSpan = popup.querySelector('#progress');
-  const txidLinkSpan = popup.querySelector('#txidLink');
-  const closeButton = document.getElementById('closeSuccessPopup');
-
-  const updateProgress = async () => {
-    if (progress < 100) {
-      progress = Math.min(progress + 1.67, 100);
-      progressSpan.textContent = Math.round(progress);
-      const confirmed = await checkTransactionConfirmation(txid);
-      if (confirmed) {
-        progress = 100;
-        progressSpan.textContent = progress;
-        txidLinkSpan.innerHTML = `<a href="${explorerUrl}" target="_blank">${txid}</a>`;
-      } else {
-        setTimeout(updateProgress, 10000);
-      }
-    }
-  };
-
-  updateProgress();
-
-  closeButton.onclick = () => document.body.removeChild(popup);
-}
-
-window.showSuccessPopup = showSuccessPopup;
-
-// Fonctions pour le spinner de chargement
-function showLoadingSpinner() {
-  const spinner = document.getElementById('loadingSpinner');
-  if (spinner) spinner.style.display = 'block';
-}
-
-function hideLoadingSpinner() {
-  const spinner = document.getElementById('loadingSpinner');
-  if (spinner) spinner.style.display = 'none';
-}
-
-async function initNetworkParams() {
-  try {
-    const feeInfo = await rpc('estimatesmartfee', [6]);
-    const rawFeeRate = feeInfo.feerate || MIN_FEE_RATE;
-    DYNAMIC_FEE_RATE = rawFeeRate;
-    window.DYNAMIC_FEE_RATE = DYNAMIC_FEE_RATE;
-    console.log('Dynamic fee rate:', DYNAMIC_FEE_RATE);
-  } catch (e) {
-    DYNAMIC_FEE_RATE = MIN_FEE_RATE;
-    window.DYNAMIC_FEE_RATE = DYNAMIC_FEE_RATE;
-    console.error('Error fetching fees:', e);
-  }
-}
-
-function genAddr(type) {
-  try {
-    if (!['legacy', 'p2sh', 'bech32', 'p2tr'].includes(type)) {
-      throw new Error(i18next.t('errors.invalid_address_type'));
-    }
-    const kp = ECPair.makeRandom({ network: NITO_NETWORK });
-    const privateKeyHex = Buffer.from(kp.privateKey).toString('hex');
-    const pubkeyBuffer = Buffer.from(kp.publicKey);
-    let address;
-    if (type === 'legacy') {
-      address = bitcoin.payments.p2pkh({ pubkey: pubkeyBuffer, network: NITO_NETWORK }).address;
-    } else if (type === 'p2sh') {
-      const p2wpkh = bitcoin.payments.p2wpkh({ pubkey: pubkeyBuffer, network: NITO_NETWORK });
-      address = bitcoin.payments.p2sh({ redeem: p2wpkh, network: NITO_NETWORK }).address;
-    } else if (type === 'bech32') {
-      address = bitcoin.payments.p2wpkh({ pubkey: pubkeyBuffer, network: NITO_NETWORK }).address;
-    } else if (type === 'p2tr') {
-      const tapInternalPubkey = toXOnly(pubkeyBuffer);
-      address = bitcoin.payments.p2tr({ internalPubkey: tapInternalPubkey, network: NITO_NETWORK }).address;
-    }
-    return { address, privateKeyHex, privateKey: kp.toWIF() };
-  } catch (e) {
-    console.error('Error in genAddr:', e);
-    throw e;
-  }
-}
-
-async function validateAddress(address) {
-  try {
-    const result = await rpc('validateaddress', [address]);
-    return result.isvalid;
-  } catch (e) {
-    console.error('Error validating address:', e);
-    return false;
-  }
-}
-
-/**
- * Génère une phrase mnémonique HD
- */
-function generateHDMnemonic(wordCount = 12) {
-  try {
-    const entropyBits = wordCount === 24 ? 256 : 128;
-    const entropyBytes = entropyBits / 8;
-    const entropy = window.crypto.getRandomValues(new Uint8Array(entropyBytes));
-    const entropyHex = Array.from(entropy).map(x => x.toString(16).padStart(2, '0')).join('');
-    return bip39.entropyToMnemonic(entropyHex);
-  } catch (e) {
-    console.error('Erreur génération mnémonique:', e);
-    throw new Error(i18next.t('errors.mnemonic_generation_error'));
-  }
-}
-
-/**
- * Importe un wallet HD depuis mnémonique ou xprv
- */
-function importHDWallet(seedOrXprv, passphrase = '') {
-  try {
-    let seed;
-
-    if (seedOrXprv.startsWith('xprv')) {
-      // Clé maître directe
-      hdWallet = bip32.fromBase58(seedOrXprv);
-      currentMnemonic = null;
-    } else {
-      // Phrase mnémonique
-      const mnemonic = seedOrXprv.trim();
-      if (!bip39.validateMnemonic(mnemonic)) {
-         throw new Error(i18next.t('errors.invalid_mnemonic'));
-      }
-
-      seed = bip39.mnemonicToSeedSync(mnemonic, passphrase);
-      hdWallet = bip32.fromSeed(seed);
-      currentMnemonic = mnemonic;
-    }
-
-    // Générer la première adresse bech32 (comme votre logique actuelle)
-    const bech32Node = hdWallet.derivePath("m/84'/0'/0'/0/0");
-    const pubkey = Buffer.from(bech32Node.publicKey);
-    const keyPair = ECPair.fromPrivateKey(bech32Node.privateKey, { network: NITO_NETWORK });
-
-    const p2pkh = bitcoin.payments.p2pkh({ pubkey: pubkey, network: NITO_NETWORK });
-    const p2wpkh = bitcoin.payments.p2wpkh({ pubkey: pubkey, network: NITO_NETWORK });
-    const p2sh = bitcoin.payments.p2sh({ redeem: p2wpkh, network: NITO_NETWORK });
-
-    // Ajout Taproot (P2TR)
-    const taprootNode = hdWallet.derivePath("m/86'/0'/0'/0/0");
-    const tapInternalPubkey = toXOnly(taprootNode.publicKey);
-    const p2tr = bitcoin.payments.p2tr({ internalPubkey: tapInternalPubkey, network: NITO_NETWORK });
-    const taprootSigner = ECPair.fromPrivateKey(taprootNode.privateKey, { network: NITO_NETWORK });
-    const tweakedTaprootSigner = tweakSigner(taprootSigner);
-
-    return {
-      legacy: p2pkh.address,
-      p2sh: p2sh.address,
-      bech32: p2wpkh.address,
-      taproot: p2tr.address,
-      keyPair: keyPair,
-      publicKey: pubkey,
-      taprootKeyPair: tweakedTaprootSigner,
-      taprootPublicKey: tapInternalPubkey,
-      hdMasterKey: hdWallet.toBase58(),
-      mnemonic: currentMnemonic
-    };
-
-  } catch (e) {
-    console.error('Erreur importation HD:', e);
-    throw new Error(i18next.t('errors.hd_import_error', { message: e.message }));
-  }
-}
-
-function importWIF(wif) {
-  try {
-    const kp = ECPair.fromWIF(wif, NITO_NETWORK);
-    const pubkeyBuffer = Buffer.from(kp.publicKey);
-    const p2pkh = bitcoin.payments.p2pkh({ pubkey: pubkeyBuffer, network: NITO_NETWORK });
-    const p2wpkh = bitcoin.payments.p2wpkh({ pubkey: pubkeyBuffer, network: NITO_NETWORK });
-    const p2sh = bitcoin.payments.p2sh({ redeem: p2wpkh, network: NITO_NETWORK });
-
-    // Ajout Taproot (P2TR)
-    const tapInternalPubkey = toXOnly(pubkeyBuffer);
-    const p2tr = bitcoin.payments.p2tr({ internalPubkey: tapInternalPubkey, network: NITO_NETWORK });
-    const tweakedTaprootSigner = tweakSigner(kp);
-
-    return {
-      legacy: p2pkh.address,
-      p2sh: p2sh.address,
-      bech32: p2wpkh.address,
-      taproot: p2tr.address,
-      keyPair: kp,
-      publicKey: pubkeyBuffer,
-      taprootKeyPair: tweakedTaprootSigner,
-      taprootPublicKey: tapInternalPubkey
-    };
-  } catch (e) {
-    console.error('Error in importWIF:', e);
-    throw new Error(i18next.t('errors.invalid_wif', { message: e.message }));
-  }
-}
-
-function importHex(hex) {
-  try {
-    const privateKeyBuffer = Buffer.from(hex, 'hex');
-    if (privateKeyBuffer.length !== 32) {
-      throw new Error(i18next.t('errors.invalid_hex_length'));
-    }
-    const kp = ECPair.fromPrivateKey(privateKeyBuffer, { network: NITO_NETWORK });
-    const pubkeyBuffer = Buffer.from(kp.publicKey);
-    const p2pkh = bitcoin.payments.p2pkh({ pubkey: pubkeyBuffer, network: NITO_NETWORK });
-    const p2wpkh = bitcoin.payments.p2wpkh({ pubkey: pubkeyBuffer, network: NITO_NETWORK });
-    const p2sh = bitcoin.payments.p2sh({ redeem: p2wpkh, network: NITO_NETWORK });
-
-    // Ajout Taproot (P2TR)
-    const tapInternalPubkey = toXOnly(pubkeyBuffer);
-    const p2tr = bitcoin.payments.p2tr({ internalPubkey: tapInternalPubkey, network: NITO_NETWORK });
-    const tweakedTaprootSigner = tweakSigner(kp);
-
-    return {
-      legacy: p2pkh.address,
-      p2sh: p2sh.address,
-      bech32: p2wpkh.address,
-      taproot: p2tr.address,
-      keyPair: kp,
-      publicKey: pubkeyBuffer,
-      taprootKeyPair: tweakedTaprootSigner,
-      taprootPublicKey: tapInternalPubkey
-    };
-  } catch (e) {
-    console.error('Error in importHex:', e);
-    throw new Error(i18next.t('errors.invalid_hex', { message: e.message }));
-  }
-}
-
-async function utxos(addr) {
-  try {
-    const scan = await rpc('scantxoutset', ['start', [`addr(${addr})`]]);
-    if (!scan.success || !scan.unspents) return [];
-    return scan.unspents.map(u => {
-      if (!/^[0-9a-fA-F]+$/.test(u.scriptPubKey)) {
-        throw new Error(`Invalid scriptPubKey for UTXO ${u.txid}:${u.vout}`);
-      }
-      const scriptBuffer = Buffer.from(u.scriptPubKey, 'hex');
-      const scriptType = detectScriptType(u.scriptPubKey);
-      if (scriptType === 'unknown') {
-        throw new Error(`Non-compliant scriptPubKey: ${u.scriptPubKey}`);
-      }
-      return {
-        txid: u.txid,
-        vout: u.vout,
-        amount: u.amount,
-        scriptPubKey: u.scriptPubKey,
-        scriptType
-      };
-    });
-  } catch (e) {
-    console.error('Error fetching UTXO:', e);
-    throw e;
-  }
-}
-
-async function balance(addr) {
-  try {
-    const scan = await rpc('scantxoutset', ['start', [`addr(${addr})`]]);
-    return scan.total_amount || 0;
-  } catch (e) {
-    console.error('Error fetching balance:', e);
-    throw e;
-  }
-}
-
-function getAddressType(addr) {
-  try {
-    if (addr.startsWith('nito1p')) return 'p2tr';
-    if (addr.startsWith('nito1q')) return 'p2wpkh';
-    if (addr.startsWith('3')) return 'p2sh';
-    if (addr.startsWith('1')) return 'p2pkh';
-    return 'unknown';
-  } catch (e) {
-    console.error('Error detecting address:', e);
-    return 'unknown';
-  }
-}
-
-function isSegWit(type) {
-  return type === 'p2wpkh';
-}
-
-function detectScriptType(scriptPubKey) {
-  try {
-    const script = Buffer.from(scriptPubKey, 'hex');
-    if (script.length === 25 && script[0] === 0x76 && script[1] === 0xa9 && script[2] === 0x14 && script[23] === 0x88 && script[24] === 0xac) {
-      return 'p2pkh';
-    } else if (script.length === 22 && script[0] === 0x00 && script[1] === 0x14) {
-      return 'p2wpkh';
-    } else if (script.length === 23 && script[0] === 0xa9 && script[1] === 0x14 && script[22] === 0x87) {
-      return 'p2sh';
-    } else if (script.length === 34 && script[0] === 0x51 && script[1] === 0x20) {
-      return 'p2tr';
-    }
-    return 'unknown';
-  } catch (e) {
-    console.error('Error detecting script:', e);
-    return 'unknown';
-  }
-}
-
-function getDustThreshold(scriptType) {
-  return DUST_AMOUNT[scriptType] || DUST_AMOUNT.p2sh;
-}
-
-function estimateTxSize(scriptType, numInputs, numOutputs, destScriptType) {
-  const inputSizes = { p2pkh: 148, p2wpkh: 68, p2sh: 91, p2tr: 57.5 };
-  const outputSizes = { p2pkh: 34, p2wpkh: 31, p2sh: 32, p2tr: 43 };
-  const overhead = 10;
-  const inputSize = inputSizes[scriptType] || inputSizes.p2wpkh;
-  const outputSize = outputSizes[destScriptType] || outputSizes.p2wpkh;
-  return overhead + inputSize * numInputs + outputSize * numOutputs;
-}
-
-function toXOnly(pubkey) {
-  return pubkey.slice(1, 33);
-}
-
-function tapTweakHash(pubKey, h = Buffer.alloc(0)) {
-  return bitcoin.crypto.taggedHash('TapTweak', Buffer.concat([toXOnly(pubKey), h]));
-}
-
-function tweakSigner(signer, opts = {}) {
-  let privateKey = signer.privateKey;
-  const tweak = tapTweakHash(signer.publicKey, opts.tweakHash);
-  privateKey = tinysecp.privateAdd(privateKey, tweak);
-  if (!privateKey) throw new Error('Invalid tweak');
-  return ECPair.fromPrivateKey(privateKey, { network: signer.network });
-}
-
-function getP2SHAddress(pubkeyBuffer) {
-  try {
-    const p2wpkh = bitcoin.payments.p2wpkh({ pubkey: pubkeyBuffer, network: NITO_NETWORK });
-    const p2sh = bitcoin.payments.p2sh({ redeem: p2wpkh, network: NITO_NETWORK });
-    return { address: p2sh.address, redeemScript: p2wpkh.output };
-  } catch (e) {
-    console.error('Error converting to P2SH:', e);
-    throw e;
-  }
-}
-
-async function transferToP2SH(amt) {
-  updateLastActionTime();
-  if (!walletAddress || !walletKeyPair || !walletPublicKey) throw Error(i18next.t('errors.import_first'));
-  const { address: p2shAddress } = getP2SHAddress(walletPublicKey);
-  return await signTxWithPSBT(p2shAddress, amt);
-}
-
-// Fonction spécialisée pour la consolidation par lots
-async function signTxBatch(to, amt, specificUtxos, isConsolidation = true) {
-  updateLastActionTime();
-  if (!walletAddress || !walletKeyPair || !walletPublicKey) throw Error(i18next.t('errors.import_first'));
-
-  console.log('Starting batch transaction preparation for:', to, 'Amount:', amt, 'UTXOs:', specificUtxos.length);
-
-  const sendScriptType = getAddressType(walletAddress);
-  if (!['p2wpkh', 'p2tr'].includes(sendScriptType)) throw new Error(i18next.t('errors.only_bech32_supported'));
-
-  const destScriptType = getAddressType(to);
-  console.log('Script type - sender:', sendScriptType, 'destination:', destScriptType);
-
-  const target = Math.round(amt * 1e8);
-  let total = 0;
-
-  // Utiliser les UTXOs spécifiques fournis
-  const selectedIns = specificUtxos;
-  for (const u of selectedIns) {
-    total += Math.round(u.amount * 1e8);
-  }
-
-  // Calcul des frais basé sur les UTXOs réellement utilisés
-  const feeRate = DYNAMIC_FEE_RATE || MIN_FEE_RATE;
-  const fees = Math.max(
-    Math.round((selectedIns.length * (sendScriptType === 'p2tr' ? 57.5 : 68) + 50) * (feeRate * 1e8) / 1000),
-    Math.round(MIN_CONSOLIDATION_FEE * 1e8)
-  );
-
-  console.log('Batch - Selected UTXOs:', selectedIns.length, 'Total:', total / 1e8, 'Target:', target / 1e8, 'Fees:', fees / 1e8);
-
-  const change = total - target - fees;
-  if (change < 0 && !isConsolidation) throw new Error(i18next.t('errors.insufficient_funds'));
-
-  const psbt = new bitcoin.Psbt({ network: NITO_NETWORK });
-  psbt.setVersion(2);
-
-  for (const utxo of selectedIns) {
-    const scriptBuffer = Buffer.from(utxo.scriptPubKey, 'hex');
-    if (sendScriptType === 'p2wpkh') {
-      psbt.addInput({
-        hash: utxo.txid,
-        index: utxo.vout,
-        witnessUtxo: { script: scriptBuffer, value: Math.round(utxo.amount * 1e8) }
+      document.addEventListener('touchend', () => {
+        isZooming = false;
+        // Réinitialiser le zoom après un court délai pour permettre au navigateur de mettre à jour
+        setTimeout(() => {
+          resetZoom();
+        }, 300);
       });
-    } else if (sendScriptType === 'p2tr') {
-      psbt.addInput({
-        hash: utxo.txid,
-        index: utxo.vout,
-        witnessUtxo: { script: scriptBuffer, value: Math.round(utxo.amount * 1e8) },
-        tapInternalKey: taprootPublicKey
-      });
-    }
-  }
 
-  if (target < getDustThreshold(destScriptType)) {
-    throw new Error(i18next.t('errors.low_amount', { amount: target, minimum: getDustThreshold(destScriptType) }));
-  }
-  psbt.addOutput({ address: to, value: target });
-
-  if (change > getDustThreshold(sendScriptType === 'p2tr' ? 'p2tr' : 'p2wpkh') && !isConsolidation) {
-    psbt.addOutput({ address: walletAddress, value: change });
-  }
-
-  const signer = {
-    network: walletKeyPair.network,
-    privateKey: walletKeyPair.privateKey,
-    publicKey: sendScriptType === 'p2tr' ? taprootPublicKey : walletPublicKey,
-    sign: (hash) => Buffer.from(walletKeyPair.sign(hash))
-  };
-
-  for (let i = 0; i < selectedIns.length; i++) {
-    if (sendScriptType === 'p2tr') {
-      psbt.signInput(i, walletKeyPair); // SIGHASH_DEFAULT pour Taproot
-    } else {
-      psbt.signInput(i, signer, [bitcoin.Transaction.SIGHASH_ALL]);
-    }
-  }
-
-  psbt.finalizeAllInputs();
-  const tx = psbt.extractTransaction();
-  const hex = tx.toHex();
-
-  console.log('Batch transaction hex:', hex, 'TXID:', tx.getId());
-  return { hex, actualFees: fees / 1e8 };
-}
-
-async function signTx(to, amt, isConsolidation = false) {
-  updateLastActionTime();
-  if (!walletAddress || !walletKeyPair || !walletPublicKey) throw Error(i18next.t('errors.import_first'));
-
-  console.log('Starting Bech32 to Bech32 transaction preparation for:', to, 'Amount:', amt, 'Consolidation:', isConsolidation);
-
-  const ins = await utxos(walletAddress);
-  if (!ins.length) throw new Error(i18next.t('errors.no_utxo'));
-
-  // MODIFICATION: Filtrer les UTXOs avec OP_RETURN pour les transactions normales
-  const workingIns = isConsolidation ? ins : await filterOpReturnUtxos(ins);
-  if (!workingIns.length) throw new Error(i18next.t('errors.utxo_opreturn_consolidate'));
-
-  const sendScriptType = getAddressType(walletAddress);
-  if (sendScriptType !== 'p2wpkh') throw new Error(i18next.t('errors.only_bech32_supported'));
-
-  const destScriptType = getAddressType(to);
-  console.log('Script type - sender:', sendScriptType, 'destination:', destScriptType);
-
-  const target = Math.round(amt * 1e8);
-  workingIns.sort((a, b) => b.amount - a.amount);
-  let total = 0;
-  const selectedIns = [];
-
-  // MODIFICATION: Sélection intelligente des UTXOs
-  for (const u of workingIns) {
-    selectedIns.push(u);
-    total += Math.round(u.amount * 1e8);
-
-    // Pour les transactions normales, arrêter dès qu'on a assez
-    if (!isConsolidation) {
-      const estimatedSize = estimateTxSize(sendScriptType, selectedIns.length, 2, destScriptType);
-      const feeRate = DYNAMIC_FEE_RATE || MIN_FEE_RATE;
-      const estimatedFees = Math.max(Math.round(estimatedSize * (feeRate * 1e8) / 1000), Math.round(MIN_CONSOLIDATION_FEE * 1e8));
-
-      if (total >= target + estimatedFees + getDustThreshold('p2wpkh')) {
-        break;
+      // Fonction pour réinitialiser le zoom
+      function resetZoom() {
+        // Forcer l'échelle à 0.8 via CSS zoom
+        document.body.style.zoom = '0.8';
+        // Forcer également via meta viewport
+        const viewport = document.querySelector('meta[name="viewport"]');
+        viewport.setAttribute('content', 'width=device-width, initial-scale=0.8, user-scalable=yes');
       }
-    }
 
-    // Pour consolidation, utiliser tous les UTXOs
-  }
-
-  const txSize = estimateTxSize(sendScriptType, selectedIns.length, 1, destScriptType);
-  const feeRate = DYNAMIC_FEE_RATE || MIN_FEE_RATE;
-  const inputFee = Math.max(Math.round((selectedIns.length * 68 + 50) * (feeRate * 1e8) / 1000), Math.round(MIN_CONSOLIDATION_FEE * 1e8));
-
-  console.log('Estimated size:', txSize, 'vbytes, Fee:', inputFee / 1e8, 'NITO, Selected UTXOs:', selectedIns.length);
-
-  const fees = inputFee;
-  const change = total - target - fees;
-  if (change < 0) throw new Error(i18next.t('errors.insufficient_funds'));
-
-  const psbt = new bitcoin.Psbt({ network: NITO_NETWORK });
-  psbt.setVersion(2);
-
-  for (const utxo of selectedIns) {
-    const scriptBuffer = Buffer.from(utxo.scriptPubKey, 'hex');
-    psbt.addInput({
-      hash: utxo.txid,
-      index: utxo.vout,
-      witnessUtxo: { script: scriptBuffer, value: Math.round(utxo.amount * 1e8) }
-    });
-  }
-
-  if (target < getDustThreshold(destScriptType)) {
-    throw new Error(i18next.t('errors.low_amount', { amount: target, minimum: getDustThreshold(destScriptType) }));
-  }
-  psbt.addOutput({ address: to, value: target });
-
-  if (change > getDustThreshold('p2wpkh')) {
-    psbt.addOutput({ address: walletAddress, value: change });
-  }
-
-  const signer = {
-    network: walletKeyPair.network,
-    privateKey: walletKeyPair.privateKey,
-    publicKey: walletPublicKey,
-    sign: (hash) => Buffer.from(walletKeyPair.sign(hash))
-  };
-
-  for (let i = 0; i < selectedIns.length; i++) {
-    psbt.signInput(i, signer, [bitcoin.Transaction.SIGHASH_ALL]);
-  }
-
-  psbt.finalizeAllInputs();
-  const tx = psbt.extractTransaction();
-  const hex = tx.toHex();
-
-  console.log('Transaction hex:', hex, 'TXID:', tx.getId());
-  return { hex, actualFees: fees / 1e8 };
-}
-
-async function signTxWithPSBT(to, amt, isConsolidation = false) {
-  updateLastActionTime();
-  if (!walletAddress || !walletKeyPair || !walletPublicKey) throw Error(i18next.t('errors.import_first'));
-
-  console.log('Starting transaction preparation for:', to, 'Amount:', amt, 'Consolidation:', isConsolidation);
-
-  const ins = await utxos(walletAddress);
-  if (!ins.length) throw new Error(i18next.t('errors.no_utxo'));
-
-  // MODIFICATION: Filtrer les UTXOs avec OP_RETURN pour les transactions normales
-  const workingIns = isConsolidation ? ins : await filterOpReturnUtxos(ins);
-  if (!workingIns.length) throw new Error('Aucun UTXO disponible (tous contiennent des OP_RETURN, veuillez consolider les UTXOs)');
-
-  const sendScriptType = getAddressType(walletAddress);
-  const destScriptType = getAddressType(to);
-  console.log('Script type - sender:', sendScriptType, 'destination:', destScriptType);
-
-  const target = Math.round(amt * 1e8);
-  workingIns.sort((a, b) => b.amount - a.amount);
-  let total = 0;
-  const selectedIns = [];
-
-  // MODIFICATION: Sélection intelligente des UTXOs
-  for (const u of workingIns) {
-    selectedIns.push(u);
-    total += Math.round(u.amount * 1e8);
-
-    // Pour les transactions normales, arrêter dès qu'on a assez
-    if (!isConsolidation) {
-      const estimatedSize = estimateTxSize(sendScriptType, selectedIns.length, 2, destScriptType);
-      const feeRate = DYNAMIC_FEE_RATE || MIN_FEE_RATE;
-      const estimatedFees = Math.max(Math.round(estimatedSize * (feeRate * 1e8) / 1000), Math.round(MIN_CONSOLIDATION_FEE * 1e8));
-
-      if (total >= target + estimatedFees + getDustThreshold(sendScriptType === 'p2tr' ? 'p2tr' : 'p2wpkh')) {
-        break;
-      }
-    }
-
-    // Pour consolidation, utiliser tous les UTXOs
-  }
-
-  const txSize = estimateTxSize(sendScriptType, selectedIns.length, 1, destScriptType);
-  const feeRate = DYNAMIC_FEE_RATE || MIN_FEE_RATE;
-  const inputFee = Math.max(Math.round((selectedIns.length * (sendScriptType === 'p2tr' ? 57.5 : 68) + 50) * (feeRate * 1e8) / 1000), Math.round(MIN_CONSOLIDATION_FEE * 1e8));
-
-  console.log('Estimated size:', txSize, 'vbytes, Fee:', inputFee / 1e8, 'NITO, Selected UTXOs:', selectedIns.length);
-
-  const fees = inputFee;
-  const change = total - target - fees;
-  if (change < 0) throw new Error(i18next.t('errors.insufficient_funds'));
-
-  const psbt = new bitcoin.Psbt({ network: NITO_NETWORK });
-  psbt.setVersion(2);
-
-  for (const utxo of selectedIns) {
-    const scriptBuffer = Buffer.from(utxo.scriptPubKey, 'hex');
-    if (sendScriptType === 'p2wpkh') {
-      psbt.addInput({
-        hash: utxo.txid,
-        index: utxo.vout,
-        witnessUtxo: { script: scriptBuffer, value: Math.round(utxo.amount * 1e8) }
-      });
-    } else if (sendScriptType === 'p2sh') {
-      const { redeemScript } = getP2SHAddress(walletPublicKey);
-      if (!redeemScript) throw new Error(i18next.t('errors.invalid_redeem_script'));
-      psbt.addInput({
-        hash: utxo.txid,
-        index: utxo.vout,
-        witnessUtxo: { script: scriptBuffer, value: Math.round(utxo.amount * 1e8) },
-        redeemScript: redeemScript
-      });
-    } else if (sendScriptType === 'p2pkh') {
-      const rawTx = await rpc('getrawtransaction', [utxo.txid, true]);
-      psbt.addInput({
-        hash: utxo.txid,
-        index: utxo.vout,
-        nonWitnessUtxo: Buffer.from(rawTx.hex, 'hex')
-      });
-    } else if (sendScriptType === 'p2tr') {
-      psbt.addInput({
-        hash: utxo.txid,
-        index: utxo.vout,
-        witnessUtxo: { script: scriptBuffer, value: Math.round(utxo.amount * 1e8) },
-        tapInternalKey: taprootPublicKey
-      });
-    } else {
-      throw new Error(i18next.t('errors.unsupported_address_type'));
-    }
-  }
-
-  if (target < getDustThreshold(destScriptType)) {
-    throw new Error(i18next.t('errors.low_amount', { amount: target, minimum: getDustThreshold(destScriptType) }));
-  }
-  psbt.addOutput({ address: to, value: target });
-
-  if (change > getDustThreshold(sendScriptType === 'p2tr' ? 'p2tr' : 'p2wpkh')) {
-    psbt.addOutput({ address: walletAddress, value: change });
-  }
-
-  const signer = {
-    network: walletKeyPair.network,
-    privateKey: walletKeyPair.privateKey,
-    publicKey: sendScriptType === 'p2tr' ? taprootPublicKey : walletPublicKey,
-    sign: (hash) => Buffer.from(walletKeyPair.sign(hash))
-  };
-
-  for (let i = 0; i < selectedIns.length; i++) {
-    try {
-      if (sendScriptType === 'p2tr') {
-        psbt.signInput(i, walletKeyPair); // SIGHASH_DEFAULT pour Taproot
-      } else {
-        psbt.signInput(i, signer, [bitcoin.Transaction.SIGHASH_ALL]);
-      }
-    } catch (e) {
-      console.error(`Signature error for input ${i}:`, e);
-      throw new Error(i18next.t('errors.signature_failed', { input: i, message: e.message }));
-    }
-  }
-
-  try {
-    psbt.finalizeAllInputs();
-  } catch (e) {
-    console.error('Error finalizing inputs:', e);
-    throw new Error(i18next.t('errors.finalization_failed', { message: e.message }));
-  }
-
-  const tx = psbt.extractTransaction();
-  const hex = tx.toHex();
-
-  console.log('Transaction PSBT hex:', hex, 'TXID:', tx.getId());
-  return { hex, actualFees: fees / 1e8 };
-}
-
-async function getExplorerUrl(txid) {
-  const primaryUrl = `https://explorer.nito.network/tx/${txid}`;
-  const fallbackUrl = `https://nitoexplorer.org/tx/${txid}`;
-  try {
-    const res = await fetch('https://explorer.nito.network', { method: 'HEAD', mode: 'cors' });
-    if (res.ok) return primaryUrl;
-    console.log('Primary explorer unavailable, using fallback');
-    return fallbackUrl;
-  } catch (e) {
-    console.error('Error checking explorer:', e);
-    return fallbackUrl;
-  }
-}
-
-async function checkTransactionConfirmation(txid) {
-  const primaryApi = `https://explorer.nito.network/ext/gettx/${txid}`;
-  const fallbackApi = `https://nitoexplorer.org/ext/gettx/${txid}`;
-  try {
-    const res = await fetch(primaryApi);
-    if (res.ok) {
-      const data = await res.json();
-      return data.confirmations >= 1;
-    }
-    const fallbackRes = await fetch(fallbackApi);
-    if (fallbackRes.ok) {
-      const fallbackData = await fallbackRes.json();
-      return fallbackData.confirmations >= 1;
-    }
-    return false;
-  } catch (e) {
-    console.error('Error checking confirmation via API:', e);
-    return false;
-  }
-}
-
-window.showSuccessPopup = showSuccessPopup;
-
-async function consolidateUtxos() {
-  updateLastActionTime();
-  const body = document.body;
-  console.log('Consolidate UTXOs button clicked');
-
-  try {
-    if (!walletAddress || !walletKeyPair || !walletPublicKey || !bech32Address) {
-      alert(i18next.t('errors.import_first'));
-      console.error('Wallet or addresses not initialized');
-      return;
-    }
-
-    const sourceType = $('debitAddressType').value;
-    if (!['bech32', 'p2tr'].includes(sourceType)) {
-      alert('Seulement Bech32 ou Taproot supporté pour la consolidation');
-      console.error('Invalid source type:', sourceType);
-      return;
-    }
-
-    const sourceAddress = sourceType === 'p2tr' ? taprootAddress : bech32Address;
-    console.log('Consolidating UTXOs for:', sourceAddress);
-
-    showLoadingSpinner();
-
-    // Récupérer tous les UTXOs initiaux
-    const initialUtxos = await utxos(sourceAddress);
-    if (initialUtxos.length < 2) {
-      hideLoadingSpinner();
-      alert(i18next.t('errors.consolidation_low_utxo'));
-      console.log('Less than 2 UTXOs found:', initialUtxos.length);
-      return;
-    }
-
-    console.log('Initial UTXOs to consolidate:', initialUtxos.length);
-
-    // Calculer le nombre d'étapes nécessaires
-    const utxosPerBatch = 500;
-    const estimatedSteps = Math.ceil(initialUtxos.length / utxosPerBatch);
-    const maxSteps = Math.min(estimatedSteps, 100);
-
-    console.log(`Consolidation estimée: ${estimatedSteps} étapes pour ${initialUtxos.length} UTXOs`);
-
-    // Demander confirmation
-    const confirm = await new Promise(resolve => {
-      hideLoadingSpinner();
-      const popup = document.createElement('div');
-      popup.className = 'popup';
-      popup.style.position = 'fixed';
-      popup.style.top = '50%';
-      popup.style.left = '50%';
-      popup.style.transform = 'translate(-50%, -50%)';
-      popup.style.background = body.classList.contains('dark-mode') ? '#37474f' : 'white';
-      popup.style.padding = '20px';
-      popup.style.border = '1px solid black';
-      popup.style.zIndex = '1000';
-      popup.style.color = body.classList.contains('dark-mode') ? '#e0e0e0' : '#1e3a8a';
-      popup.innerHTML = DOMPurify.sanitize(`
-        <p>${initialUtxos.length} UTXOs → 1 UTXO</p>
-        <button id="confirmConsolidate">Confirmer</button>
-        <button id="cancelConsolidate">Annuler</button>
-      `);
-      document.body.appendChild(popup);
-
-      const confirmButton = document.getElementById('confirmConsolidate');
-      const cancelButton = document.getElementById('cancelConsolidate');
-
-      confirmButton.onclick = () => {
-        document.body.removeChild(popup);
-        resolve(true);
-      };
-      cancelButton.onclick = () => {
-        document.body.removeChild(popup);
-        resolve(false);
-      };
-    });
-
-    if (!confirm) {
-      console.log('Consolidation cancelled by user');
-      return;
-    }
-
-    showLoadingSpinner();
-
-    const originalWalletAddress = walletAddress;
-    walletAddress = sourceAddress;
-
-    let currentUtxos = [...initialUtxos];
-    let stepCount = 1;
-    let totalSuccess = 0;
-    let lastTxid = null;
-    let consecutiveIdenticalScans = 0;
-    const MAX_IDENTICAL_SCANS = 3;
-
-    try {
-      // Boucle pour traiter TOUS les UTXOs
-      while (currentUtxos.length > 1 && stepCount <= maxSteps) {
-        console.log(`${stepCount}/${maxSteps} (${Math.round((stepCount/maxSteps)*100)}%) - UTXOs restants: ${currentUtxos.length}`);
-
-        // Si on a exactement 1 UTXO, on a terminé
-        if (currentUtxos.length === 1) {
-          console.log("🎯 CONSOLIDATION TERMINÉE : 1 seul UTXO restant");
-          break;
+      // Écouter les changements de taille de fenêtre (peut aider sur certains appareils)
+      window.addEventListener('resize', () => {
+        if (!isZooming) {
+          resetZoom();
         }
+      });
 
-        // Si on a 2 UTXOs depuis plusieurs scans → Terminer
-        if (currentUtxos.length === 2 && consecutiveIdenticalScans >= MAX_IDENTICAL_SCANS) {
-          console.log(`🎯 CONSOLIDATION RÉUSSI : 2 UTXOs restants après ${consecutiveIdenticalScans} scans identiques`);
-          break;
-        }
-
-        // Prendre TOUS les UTXOs restants
-        const batchUtxos = currentUtxos.slice(0, 500);
-
-        currentUtxos = currentUtxos.slice(500);
-
-        // Calculer le montant total
-        let batchTotal = 0;
-        for (const u of batchUtxos) {
-          batchTotal += Math.round(u.amount * 1e8);
-        }
-
-        const target = batchTotal;
-
-        if (target < getDustThreshold(sourceType)) {
-          console.log(`⚠️ Montant trop petit (${target / 1e8} NITO), consolidation terminée`);
-          break;
-        }
-
-        // Calculer le montant après déduction des frais
-        const feeRate = DYNAMIC_FEE_RATE || MIN_FEE_RATE;
-        const estimatedFees = Math.round((batchUtxos.length * (sourceType === 'p2tr' ? 57.5 : 68) + 50) * (feeRate * 1e8) / 1000);
-        const amountToSend = (batchTotal - estimatedFees) / 1e8;
-
-        console.log(`🚀 Étape ${stepCount} - Consolidation: ${batchUtxos.length} UTXOs → 1 UTXO (${amountToSend} NITO)`);
-
-        try {
-          const result = await signTxBatch(sourceAddress, amountToSend, batchUtxos, true);
-          const hex = result.hex;
-          const txid = await rpc('sendrawtransaction', [hex]);
-
-          console.log(`✅ Étape ${stepCount} réussie, TXID: ${txid}`);
-          totalSuccess++;
-          lastTxid = txid;
-
-          // Attendre la confirmation
-          console.log('⏳ Attente confirmation (5 secondes)...');
-          await new Promise(resolve => setTimeout(resolve, 5000));
-
-          console.log(`📊 UTXOs restants à traiter: ${currentUtxos.length}`);
-
-          // Si on a réussi à tout consolider, on sort
-          if (currentUtxos.length <= 1) {
-            console.log("🎯 CONSOLIDATION COMPLÈTE !");
-            break;
-          }
-
-          consecutiveIdenticalScans = 0;
-
-        } catch (error) {
-          if (error.message.includes('txn-mempool-conflict')) {
-            console.log(`⚠️ Conflit mempool étape ${stepCount}, attente 10s...`);
-            await new Promise(resolve => setTimeout(resolve, 10000));
-            currentUtxos = await utxos(sourceAddress);
-            continue;
-          } else if (error.message.includes('Transaction already in block chain')) {
-            console.log(`✅ Transaction déjà confirmée à l'étape ${stepCount}`);
-            totalSuccess++;
-            await new Promise(resolve => setTimeout(resolve, 5000));
-            currentUtxos = await utxos(sourceAddress);
-          } else {
-            throw error;
+      // Vérification périodique pour s'assurer que le zoom est correct
+      setInterval(() => {
+        if (!isZooming) {
+          const currentScale = window.visualViewport ? window.visualViewport.scale : 1;
+          if (currentScale !== lastScale) {
+            lastScale = currentScale;
+            resetZoom();
           }
         }
+      }, 500);
+    }
+  </script>
 
-        stepCount++;
-      }
+  <script type="module" src="./wallet.js"></script>
 
-      hideLoadingSpinner();
+  <footer style="
+    text-align: center;
+    margin-top: 40px;
+    padding: 20px;
+    border-top: 1px solid #e0e0e0;
+    font-size: 14px;
+    color: #666;
+    background: linear-gradient(to bottom, rgba(230, 240, 250, 0.5), rgba(179, 212, 252, 0.5));
+  ">
+    <div style="margin-bottom: 10px;">
+      🔓 <span data-i18n="footer.open_source">Ce projet est open source</span> -
+      <a href="https://github.com/biigbang0001/wallet-nito" target="_blank" style="color: #1e3a8a; text-decoration: none;">
+        <span data-i18n="footer.view_code">Voir le code sur GitHub</span> 📖
+      </a>
+    </div>
+    <div>
+      🌐 <span data-i18n="footer.official_site">Site officiel NITO</span> -
+      <a href="https://nito.network/" target="_blank" style="color: #1e3a8a; text-decoration: none;">
+        nito.network 🚀
+      </a>
+    </div>
+  </footer>
 
-      if (totalSuccess > 0) {
-        await showSuccessPopup(lastTxid);
-        alert(i18next.t('consolidation_final_completed', { transactions: totalSuccess, utxos: currentUtxos.length }));
-        setTimeout(() => $('refreshBalanceButton').click(), 3000);
-      } else if (currentUtxos.length <= 1) {
-        alert(i18next.t('consolidation_single_utxo_completed'));
-        setTimeout(() => $('refreshBalanceButton').click(), 3000);
-      } else {
-        alert(i18next.t('consolidation_stopped', { utxos: currentUtxos.length }));
-      }
-
-    } catch (error) {
-      hideLoadingSpinner();
-      if (error.message.includes('Transaction already in block chain')) {
-        await showSuccessPopup(lastTxid);
-        alert(i18next.t('consolidation_already_done'));
-        setTimeout(() => $('refreshBalanceButton').click(), 1000);
-      } else {
-        throw error;
-      }
-    } finally {
-      walletAddress = originalWalletAddress;
+  <!-- Styles pour le mode sombre du footer -->
+  <style>
+    body.dark-mode footer {
+      background: linear-gradient(to bottom, rgba(44, 62, 80, 0.5), rgba(26, 37, 47, 0.5)) !important;
+      border-top: 1px solid #555 !important;
+      color: #bbb !important;
     }
 
-  } catch (e) {
-    hideLoadingSpinner();
-    alert(i18next.t('errors.consolidation_error', { message: e.message }));
-    console.error('Consolidation error:', e);
-  }
-}
-
-function copyToClipboard(id) {
-  updateLastActionTime();
-  const element = document.getElementById(id);
-  if (!element) {
-    alert(i18next.t('errors.element_not_found'));
-    return;
-  }
-  if (element.classList.contains('blurred')) {
-    alert(i18next.t('errors.reveal_to_copy'));
-    return;
-  }
-  const text = element.textContent || element.innerText || '';
-  if (!text) {
-    alert(i18next.t('errors.nothing_to_copy'));
-    return;
-  }
-  const textArea = document.createElement("textarea");
-  textArea.value = text;
-  textArea.style.position = "fixed";
-  textArea.style.left = "-999999px";
-  textArea.style.top = "-999999px";
-  document.body.appendChild(textArea);
-  textArea.focus();
-  textArea.select();
-  try {
-    document.execCommand('copy');
-    alert(i18next.t('copied'));
-  } catch (err) {
-    console.error('Copy error:', err);
-    alert(i18next.t('errors.copy_error'));
-  } finally {
-    document.body.removeChild(textArea);
-  }
-}
-
-function updateInactivityTimer() {
-  if (timerInterval) clearInterval(timerInterval);
-  const timerElement = document.getElementById('inactivityTimer');
-  if (!timerElement) return;
-
-  const updateTimer = () => {
-    if (!lastActionTime) {
-      timerElement.textContent = '[10:00]';
-      return;
-    }
-    const now = Date.now();
-    const elapsed = now - lastActionTime;
-    const remaining = Math.max(0, 600000 - elapsed); // 600000ms = 10min
-    const minutes = Math.floor(remaining / 60000);
-    const seconds = Math.floor((remaining % 60000) / 1000);
-    timerElement.textContent = `[${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}]`;
-    if (remaining <= 0) clearInterval(timerInterval);
-  };
-
-  updateTimer();
-  timerInterval = setInterval(updateTimer, 1000);
-}
-
-function updateLastActionTime() {
-  lastActionTime = Date.now();
-  if (inactivityTimeout) clearTimeout(inactivityTimeout);
-  inactivityTimeout = setTimeout(clearSensitiveData, 600000); // 10min
-  updateInactivityTimer();
-}
-
-function clearSensitiveData() {
-  // ✅ EFFACER SEULEMENT LES DONNÉES GÉNÉRÉES (section génération)
-  const privateKeyHex = document.getElementById('privateKeyHex');
-  const privateKey = document.getElementById('privateKey');
-  const hdMasterKey = document.getElementById('hdMasterKey');
-  const mnemonicPhrase = document.getElementById('mnemonicPhrase');
-  const generatedAddress = document.getElementById('generatedAddress');
-
-  if (privateKeyHex) privateKeyHex.textContent = '';
-  if (privateKey) privateKey.textContent = '';
-  if (hdMasterKey) hdMasterKey.textContent = '';
-  if (mnemonicPhrase) mnemonicPhrase.textContent = '';
-  if (generatedAddress) generatedAddress.innerHTML = '';
-
-  // ❌ NE PAS EFFACER LES DONNÉES IMPORTÉES
-  // walletKeyPair, walletPublicKey, bech32Address restent intacts
-
-  console.log('Generated keys cleared, imported wallet preserved');
-}
-
-window.copyToClipboard = copyToClipboard;
-window.consolidateUtxos = consolidateUtxos;
-
-const $ = id => document.getElementById(id);
-
-window.addEventListener('load', async () => {
-  console.log('Loading wallet.js');
-
-  try {
-    const requiredIds = [
-      'themeToggle', 'languageSelect', 'generateButton', 'importWalletButton', 'refreshBalanceButton',
-      'prepareTxButton', 'broadcastTxButton', 'cancelTxButton',
-      'destinationAddress', 'amountNito', 'feeNito', 'debitAddressType', 'privateKeyWIF',
-      'walletAddress', 'walletBalance', 'txHexContainer', 'signedTx', 'copyGenHex',
-      'copyGenWif', 'copyTxHex', 'generatedAddress',
-      'privateKeyHex', 'privateKey', 'revealHex', 'revealWif', 'revealWifInput',
-      'inactivityTimer',
-      'keyCounter',
-      'hdMasterKey', 'mnemonicPhrase', 'copyHdKey', 'copyMnemonic',
-      'revealHdKey', 'revealMnemonic'
-    ];
-
-    for (const id of requiredIds) {
-      if (!$(id)) {
-        console.error(`Element ${id} missing`);
-        alert(i18next.t('errors.missing_element', { id }));
-        return;
-      }
+    body.dark-mode footer a {
+      color: #64b5f6 !important;
     }
 
-    await initNetworkParams();
-    const info = await rpc('getblockchaininfo');
-    console.log('Connected to NITO node:', info);
-
-    // Récupérer et afficher la valeur initiale du compteur au chargement
-    await updateCounterDisplay();
-
-    const themeToggle = $('themeToggle');
-    const body = document.body;
-
-    function setTheme(isDark) {
-      if (isDark) {
-        body.classList.add('dark-mode');
-        themeToggle.textContent = '☀️';
-        localStorage.setItem('theme', 'dark');
-      } else {
-        body.classList.remove('dark-mode');
-        themeToggle.textContent = '🌙';
-        localStorage.setItem('theme', 'light');
-      }
+    footer a:hover {
+      text-decoration: underline !important;
     }
-
-    const savedTheme = localStorage.getItem('theme');
-    setTheme(savedTheme === 'dark');
-
-    if (themeToggle) {
-      themeToggle.addEventListener('click', () => {
-        setTheme(!body.classList.contains('dark-mode'));
-      });
-    }
-
-    $('languageSelect').addEventListener('change', (e) => {
-      i18next.changeLanguage(e.target.value, (err) => {
-        if (err) {
-          console.error('Error changing language:', err);
-          return;
-        }
-        updateTranslations();
-      });
-    });
-
-    updateInactivityTimer();
-
-    $('copyGenHex').onclick = () => copyToClipboard('privateKeyHex');
-    $('copyGenWif').onclick = () => copyToClipboard('privateKey');
-    $('copyTxHex').onclick = () => copyToClipboard('signedTx');
-    $('copyHdKey').onclick = () => copyToClipboard('hdMasterKey');
-    $('copyMnemonic').onclick = () => copyToClipboard('mnemonicPhrase');
-
-    $('generateButton').onclick = async () => {
-      updateLastActionTime();
-      try {
-        // Générer la phrase mnémonique et la clé HD
-        const mnemonic = generateHDMnemonic(12);
-        const seed = bip39.mnemonicToSeedSync(mnemonic);
-        const hdWallet = bip32.fromSeed(seed);
-        const hdMasterKey = hdWallet.toBase58();
-
-        // Dériver la première adresse bech32 (comme avant)
-        const bech32Node = hdWallet.derivePath("m/84'/0'/0'/0/0");
-        const kp = ECPair.fromPrivateKey(bech32Node.privateKey, { network: NITO_NETWORK });
-
-        const privateKeyHex = Buffer.from(kp.privateKey).toString('hex');
-        const privateKey = kp.toWIF();
-        const pubkeyBuffer = Buffer.from(kp.publicKey);
-        const p2pkh = bitcoin.payments.p2pkh({ pubkey: pubkeyBuffer, network: NITO_NETWORK });
-        const p2wpkh = bitcoin.payments.p2wpkh({ pubkey: pubkeyBuffer, network: NITO_NETWORK });
-        const p2sh = bitcoin.payments.p2sh({ redeem: p2wpkh, network: NITO_NETWORK });
-
-        // Ajout Taproot
-        const taprootNode = hdWallet.derivePath("m/86'/0'/0'/0/0");
-        const tapInternalPubkey = toXOnly(taprootNode.publicKey);
-        const p2tr = bitcoin.payments.p2tr({ internalPubkey: tapInternalPubkey, network: NITO_NETWORK });
-        const taprootSigner = ECPair.fromPrivateKey(taprootNode.privateKey, { network: NITO_NETWORK });
-        const tweakedTaprootSigner = tweakSigner(taprootSigner);
-        taprootAddress = p2tr.address;
-        taprootPublicKey = tapInternalPubkey;
-        taprootKeyPair = tweakedTaprootSigner;
-
-        const addresses = {
-          legacy: p2pkh.address,
-          p2sh: p2sh.address,
-          bech32: p2wpkh.address,
-          taproot: p2tr.address
-        };
-
-        if (!await validateAddress(addresses.legacy) ||
-            !await validateAddress(addresses.p2sh) ||
-            !await validateAddress(addresses.bech32) ||
-            !await validateAddress(addresses.taproot)) {
-          throw new Error(i18next.t('errors.invalid_addresses'));
-        }
-
-        const bech32Balance = await balance(addresses.bech32);
-        const taprootBalance = await balance(addresses.taproot);
-
-        // Afficher toutes les clés
-        $('privateKeyHex').textContent = privateKeyHex;
-        $('privateKey').textContent = privateKey;
-        $('hdMasterKey').textContent = hdMasterKey;
-        $('mnemonicPhrase').textContent = mnemonic;
-
-        // Flouter toutes les clés
-        $('privateKeyHex').classList.add('blurred');
-        $('privateKey').classList.add('blurred');
-        $('hdMasterKey').classList.add('blurred');
-        $('mnemonicPhrase').classList.add('blurred');
-
-        // Afficher l'adresse Bech32 et Bech32m en dessous
-        $('generatedAddress').innerHTML = DOMPurify.sanitize(`
-          Bech32: <span id="generatedBech32Address">${addresses.bech32}</span> <button class="copy-btn" id="copyGeneratedBech32Addr">📋</button> (Solde: ${bech32Balance.toFixed(8)} NITO)<br>
-          Bech32m (Taproot): <span id="generatedTaprootAddress">${addresses.taproot}</span> <button class="copy-btn" id="copyGeneratedTaprootAddr">📋</button> (Solde: ${taprootBalance.toFixed(8)} NITO)
-        `);
-
-        const copyGeneratedBech32Addr = $('copyGeneratedBech32Addr');
-        if (copyGeneratedBech32Addr) copyGeneratedBech32Addr.onclick = () => copyToClipboard('generatedBech32Address');
-
-        const copyGeneratedTaprootAddr = $('copyGeneratedTaprootAddr');
-        if (copyGeneratedTaprootAddr) copyGeneratedTaprootAddr.onclick = () => copyToClipboard('generatedTaprootAddress');
-
-        // Boutons de révélation existants
-        const revealHex = $('revealHex');
-        const revealWif = $('revealWif');
-        if (revealHex) {
-          revealHex.onclick = () => {
-            revealHex.disabled = true;
-            $('privateKeyHex').classList.remove('blurred');
-            setTimeout(() => {
-              $('privateKeyHex').classList.add('blurred');
-              revealHex.disabled = false;
-            }, 10000);
-          };
-        }
-        if (revealWif) {
-          revealWif.onclick = () => {
-            revealWif.disabled = true;
-            $('privateKey').classList.remove('blurred');
-            setTimeout(() => {
-              $('privateKey').classList.add('blurred');
-              revealWif.disabled = false;
-            }, 10000);
-          };
-        }
-
-        // NOUVEAUX boutons de révélation HD
-        const revealHdKey = $('revealHdKey');
-        const revealMnemonic = $('revealMnemonic');
-        if (revealHdKey) {
-          revealHdKey.onclick = () => {
-            revealHdKey.disabled = true;
-            $('hdMasterKey').classList.remove('blurred');
-            setTimeout(() => {
-              $('hdMasterKey').classList.add('blurred');
-              revealHdKey.disabled = false;
-            }, 10000);
-          };
-        }
-        if (revealMnemonic) {
-          revealMnemonic.onclick = () => {
-            revealMnemonic.disabled = true;
-            $('mnemonicPhrase').classList.remove('blurred');
-            setTimeout(() => {
-              $('mnemonicPhrase').classList.add('blurred');
-              revealMnemonic.disabled = false;
-            }, 10000);
-          };
-        }
-
-        // Incrémenter le compteur après la génération réussie
-        await incrementCounter();
-        await updateCounterDisplay();
-      } catch (e) {
-        alert(i18next.t('errors.generation_error', { message: e.message }));
-        console.error('Generation error:', e);
-      }
-    };
-
-    $('importWalletButton').onclick = async () => {
-      updateLastActionTime();
-      try {
-        const input = $('privateKeyWIF').value.trim();
-        const hdPassphrase = '';
-
-        if (!input) {
-          alert(i18next.t('errors.import_empty'));
-          return;
-        }
-
-        let addresses;
-
-        // Détection automatique du type d'entrée
-        if (input.startsWith('xprv')) {
-          // Clé HD (xprv)
-          addresses = importHDWallet(input, hdPassphrase);
-        } else if (input.split(' ').length >= 12 && input.split(' ').length <= 24) {
-          // Phrase mnémonique (12 ou 24 mots)
-          addresses = importHDWallet(input, hdPassphrase);
-        } else if (/^[0-9a-fA-F]{64}$/.test(input)) {
-          // Clé privée hex (64 caractères)
-          addresses = importHex(input);
-        } else {
-          // Clé privée WIF
-          addresses = importWIF(input);
-        }
-
-        if (!await validateAddress(addresses.legacy) ||
-            !await validateAddress(addresses.p2sh) ||
-            !await validateAddress(addresses.bech32) ||
-            !await validateAddress(addresses.taproot)) {
-          throw new Error(i18next.t('errors.invalid_addresses'));
-        }
-
-        legacyAddress = addresses.legacy;
-        p2shAddress = addresses.p2sh;
-        bech32Address = addresses.bech32;
-        taprootAddress = addresses.taproot;
-        walletAddress = bech32Address;
-        walletPublicKey = addresses.publicKey;
-        walletKeyPair = addresses.keyPair;
-        taprootPublicKey = addresses.taprootPublicKey;
-        taprootKeyPair = addresses.taprootKeyPair;
-
-        const bech32Balance = await balance(addresses.bech32);
-        const taprootBalance = await balance(addresses.taproot);
-
-        // Afficher l'adresse Bech32 et Bech32m en dessous
-        $('walletAddress').innerHTML = DOMPurify.sanitize(`
-          Bech32: <span id="bech32Address">${addresses.bech32}</span> <button class="copy-btn" id="copyBech32Addr">📋</button> (Solde: ${bech32Balance.toFixed(8)} NITO)<br>
-          Bech32m (Taproot): <span id="taprootAddress">${addresses.taproot}</span> <button class="copy-btn" id="copyTaprootAddr">📋</button> (Solde: ${taprootBalance.toFixed(8)} NITO)
-        `);
-        $('walletBalance').innerHTML = `Bech32: ${bech32Balance.toFixed(8)} | Taproot: ${taprootBalance.toFixed(8)}`;
-
-        const filteredAddresses = {
-          legacy: addresses.legacy,
-          p2sh: addresses.p2sh,
-          bech32: addresses.bech32,
-          taproot: addresses.taproot
-        };
-        console.log('Wallet imported (public info only):', filteredAddresses)
-
-        // Exposition variables pour messagerie
-        window.walletKeyPair = walletKeyPair;
-        window.walletPublicKey = walletPublicKey;
-        window.bech32Address = bech32Address;
-        window.rpc = rpc;
-        console.log("✅ Variables messagerie exposées:", bech32Address);
-
-        $('privateKeyWIF').classList.add('blurred-input');
-
-        const revealWifInput = $('revealWifInput');
-        if (revealWifInput) {
-          revealWifInput.onclick = () => {
-            revealWifInput.disabled = true;
-            $('privateKeyWIF').classList.remove('blurred-input');
-            setTimeout(() => {
-              $('privateKeyWIF').classList.add('blurred-input');
-              revealWifInput.disabled = false;
-            }, 10000);
-          };
-        }
-
-        const copyBech32Addr = $('copyBech32Addr');
-        if (copyBech32Addr) copyBech32Addr.onclick = () => copyToClipboard('bech32Address');
-
-        const copyTaprootAddr = $('copyTaprootAddr');
-        if (copyTaprootAddr) copyTaprootAddr.onclick = () => copyToClipboard('taprootAddress');
-
-        const consolidateContainer = document.querySelector('.consolidate-container');
-        if (!consolidateContainer) {
-          console.error('Consolidate container not found');
-          return;
-        }
-        if (!consolidateButtonInjected) {
-          const consolidateButton = document.createElement('button');
-          consolidateButton.id = 'consolidateButton';
-          consolidateButton.className = 'consolidate-button';
-          consolidateButton.textContent = i18next.t('send_section.consolidate_button');
-          consolidateContainer.appendChild(consolidateButton);
-          consolidateButton.onclick = () => consolidateUtxos();
-          consolidateButtonInjected = true;
-          console.log('Consolidate button injected');
-        } else {
-          const existingButton = $('consolidateButton');
-          existingButton.textContent = i18next.t('send_section.consolidate_button');
-          existingButton.onclick = () => consolidateUtxos();
-          console.log('Consolidate button already present, event attached');
-        }
-
-        // Ajouter la fonctionnalité MAX
-        const maxButton = $('maxButton');
-        if (maxButton) {
-          maxButton.onclick = async () => {
-            const dest = $('destinationAddress').value.trim();
-            if (!dest) return alert(i18next.t('errors.enter_destination_first'));
-
-            try {
-              showLoadingSpinner();
-              const sourceType = $('debitAddressType').value;
-              const sourceAddress = sourceType === 'p2tr' ? taprootAddress : bech32Address;
-              const ins = await utxos(sourceAddress);
-              const workingIns = await filterOpReturnUtxos(ins);
-              if (!workingIns.length) {
-                hideLoadingSpinner();
-                return alert(i18next.t('errors.no_utxo_available_max'));
-              }
-
-              // Trier par montant décroissant et limiter à 15 UTXOs max pour optimiser
-              workingIns.sort((a, b) => b.amount - a.amount);
-              const selectedIns = workingIns.slice(0, 15);
-
-              let total = selectedIns.reduce((sum, u) => sum + Math.round(u.amount * 1e8), 0);
-
-              const feeRate = DYNAMIC_FEE_RATE || MIN_FEE_RATE;
-              const fees = Math.max(
-                Math.round((selectedIns.length * (sourceType === 'p2tr' ? 57.5 : 68) + 50) * (feeRate * 1e8) / 1000),
-                Math.round(MIN_CONSOLIDATION_FEE * 1e8)
-              );
-
-              const maxAmount = (total - fees) / 1e8;
-              hideLoadingSpinner();
-
-              if (maxAmount <= 0) {
-                return alert(i18next.t('errors.max_insufficient_amount'));
-              }
-
-              $('amountNito').value = maxAmount.toFixed(8);
-              $('feeNito').value = (fees / 1e8).toFixed(8);
-
-              alert(i18next.t('max_button.info', {
-                amount: maxAmount.toFixed(8),
-                fees: (fees / 1e8).toFixed(8),
-                utxos: selectedIns.length
-              }));
-            } catch (e) {
-              hideLoadingSpinner();
-              alert(`Erreur: ${e.message}`);
-            }
-          };
-        }
-      } catch (e) {
-        alert(i18next.t('errors.import_error', { message: e.message }));
-        console.error('Import error:', e);
-      }
-    };
-
-    $('refreshBalanceButton').onclick = async () => {
-      updateLastActionTime();
-      if (!walletAddress) return alert(i18next.t('errors.import_first'));
-      try {
-        const bech32Balance = await balance(bech32Address);
-        const taprootBalance = await balance(taprootAddress);
-
-        if (!await validateAddress(bech32Address) || !await validateAddress(taprootAddress)) {
-          throw new Error(i18next.t('errors.invalid_addresses'));
-        }
-
-        const safeBech32 = bech32Address;
-        const safeTaproot = taprootAddress;
-        $('walletAddress').innerHTML = DOMPurify.sanitize(`
-          Bech32: <span id="bech32Address">${safeBech32}</span> <button class="copy-btn" id="copyBech32Addr">📋</button> (Solde: ${bech32Balance.toFixed(8)} NITO)<br>
-          Bech32m (Taproot): <span id="taprootAddress">${safeTaproot}</span> <button class="copy-btn" id="copyTaprootAddr">📋</button> (Solde: ${taprootBalance.toFixed(8)} NITO)
-        `);
-        $('walletBalance').innerHTML = `Bech32: ${bech32Balance.toFixed(8)} | Taproot: ${taprootBalance.toFixed(8)}`;
-
-        const copyBech32Addr = $('copyBech32Addr');
-        if (copyBech32Addr) copyBech32Addr.onclick = () => copyToClipboard('bech32Address');
-
-        const copyTaprootAddr = $('copyTaprootAddr');
-        if (copyTaprootAddr) copyTaprootAddr.onclick = () => copyToClipboard('taprootAddress');
-      } catch (e) {
-        alert(i18next.t('errors.refresh_error', { message: e.message }));
-        console.error('Refresh error:', e);
-      }
-    };
-
-    $('prepareTxButton').onclick = async () => {
-      updateLastActionTime();
-      try {
-        const dest = $('destinationAddress').value.trim();
-        const amt = parseFloat($('amountNito').value);
-        if (!dest || isNaN(amt) || amt <= 0) {
-          alert(i18next.t('errors.invalid_fields'));
-          return;
-        }
-        try {
-          bitcoin.address.toOutputScript(dest, NITO_NETWORK);
-        } catch (e) {
-          alert(i18next.t('errors.invalid_address'));
-          return;
-        }
-
-        showLoadingSpinner();
-
-        const sourceType = $('debitAddressType').value;
-        const destType = getAddressType(dest);
-        let hex;
-
-        try {
-          let result;
-          if (sourceType === 'bech32') {
-            walletAddress = bech32Address;
-            walletPublicKey = walletPublicKey; // Bech32 pubkey
-            walletKeyPair = walletKeyPair; // Bech32 keypair
-            result = await signTxWithPSBT(dest, amt);
-          } else if (sourceType === 'p2tr') {
-            walletAddress = taprootAddress;
-            walletPublicKey = taprootPublicKey;
-            walletKeyPair = taprootKeyPair;
-            result = await signTxWithPSBT(dest, amt);
-          } else {
-            walletAddress = sourceType === 'legacy' ? legacyAddress : sourceType === 'p2sh' ? p2shAddress : bech32Address;
-            result = await signTxWithPSBT(dest, amt);
-          }
-
-          hex = result.hex;
-          $('feeNito').value = result.actualFees.toFixed(8);
-
-          hideLoadingSpinner();
-          $('signedTx').textContent = hex;
-          $('txHexContainer').style.display = 'block';
-          alert(i18next.t('OK.transaction_prepared') + ` Fee: ${result.actualFees.toFixed(8)} NITO`);
-        } catch (e) {
-          hideLoadingSpinner();
-          throw e;
-        }
-      } catch (e) {
-        hideLoadingSpinner();
-        alert(i18next.t('errors.transaction_error', { message: e.message }));
-        console.error('Transaction preparation error:', e);
-      }
-    };
-
-    $('broadcastTxButton').onclick = async () => {
-      updateLastActionTime();
-      const hex = $('signedTx').textContent.trim();
-      if (!hex) return alert(i18next.t('errors.no_transaction'));
-
-      try {
-        showLoadingSpinner();
-        const txid = await rpc('sendrawtransaction', [hex]);
-        hideLoadingSpinner();
-
-        await showSuccessPopup(txid);
-        $('destinationAddress').value = '';
-        $('amountNito').value = '';
-        $('signedTx').textContent = '';
-        $('txHexContainer').style.display = 'none';
-        setTimeout(() => $('refreshBalanceButton').click(), 3000);
-      } catch (e) {
-        hideLoadingSpinner();
-        alert(i18next.t('errors.broadcast_error', { message: e.message }));
-        console.error('Broadcast error:', e, 'Transaction hex:', hex);
-      }
-    };
-
-    $('cancelTxButton').onclick = () => {
-      updateLastActionTime();
-      ['destinationAddress', 'amountNito'].forEach(id => $(id).value = '');
-      ['signedTx'].forEach(id => $(id).textContent = '');
-      $('txHexContainer').style.display = 'none';
-    };
-  } catch (e) {
-    alert(i18next.t('errors.node_connection', { message: e.message }));
-    console.error('Connection error:', e);
-  }
-});
+  </style>
+</body>
+</html>
