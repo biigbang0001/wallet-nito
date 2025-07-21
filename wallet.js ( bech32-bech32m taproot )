@@ -358,20 +358,12 @@ function importHDWallet(seedOrXprv, passphrase = '') {
     const taprootNode = hdWallet.derivePath("m/86'/0'/0'/0/0");
     const tapInternalPubkey = toXOnly(taprootNode.publicKey);
     const p2tr = bitcoin.payments.p2tr({ internalPubkey: tapInternalPubkey, network: NITO_NETWORK });
-    const taprootPrivateKey = taprootNode.privateKey;
-    const tapTweak = tapTweakHash(taprootNode.publicKey);
-    const n = BigInt('0xfffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364141');
-    const privBig = BigInt('0x' + taprootPrivateKey.toString('hex'));
-    const tweakBig = BigInt('0x' + tapTweak.toString('hex'));
-    const tweakedPrivBig = (privBig + tweakBig) % n;
-    const tweakedPrivateKey = Buffer.from(tweakedPrivBig.toString(16).padStart(64, '0'), 'hex');
-    const tweakedPublicKey = noble.getPublicKey(new Uint8Array(tweakedPrivateKey), true);
 
+    // Utilise les clés UNTWWEAKED pour le signer (bitcoinjs-lib tweakera automatiquement)
     const taprootCustomSigner = {
       network: NITO_NETWORK,
-      privateKey: tweakedPrivateKey,
-      publicKey: Buffer.from(tweakedPublicKey),
-      signSchnorr: (hash) => Buffer.from(noble.sign(new Uint8Array(hash), new Uint8Array(tweakedPrivateKey), { lowS: true }))
+      privateKey: taprootNode.privateKey,  // UNTWWEAKED (Buffer)
+      publicKey: taprootNode.publicKey     // UNTWWEAKED compressed (Buffer)
     };
 
     return {
