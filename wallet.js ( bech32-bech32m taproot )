@@ -1626,19 +1626,28 @@ window.addEventListener('load', async () => {
         let hex;
 
         try {
+          let signerAddress = walletAddress;
+          let signerPublicKey = walletPublicKey;
+          let signerKeyPair = walletKeyPair;
+
+          if (sourceType === 'p2tr') {
+            signerAddress = taprootAddress;
+            signerPublicKey = taprootPublicKey;
+            signerKeyPair = taprootKeyPair;
+          } else if (sourceType === 'bech32') {
+            signerAddress = bech32Address;
+            signerPublicKey = walletPublicKey;
+            signerKeyPair = walletKeyPair;
+          } else {
+            signerAddress = sourceType === 'legacy' ? legacyAddress : sourceType === 'p2sh' ? p2shAddress : bech32Address;
+            signerPublicKey = walletPublicKey;
+            signerKeyPair = walletKeyPair;
+          }
+
           let result;
           if (sourceType === 'bech32') {
-            walletAddress = bech32Address;
-            walletPublicKey = walletPublicKey;
-            walletKeyPair = walletKeyPair;
             result = await signTx(dest, amt);
-          } else if (sourceType === 'p2tr') {
-            walletAddress = taprootAddress;
-            walletPublicKey = taprootPublicKey;
-            walletKeyPair = taprootKeyPair;
-            result = await signTxWithPSBT(dest, amt);
           } else {
-            walletAddress = sourceType === 'legacy' ? legacyAddress : sourceType === 'p2sh' ? p2shAddress : bech32Address;
             result = await signTxWithPSBT(dest, amt);
           }
 
