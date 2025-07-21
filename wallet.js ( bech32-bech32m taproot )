@@ -1618,9 +1618,9 @@ window.addEventListener('load', async () => {
         let hex;
 
         try {
-          let signerAddress = walletAddress;
-          let signerPublicKey = walletPublicKey;
-          let signerKeyPair = walletKeyPair;
+          let signerAddress;
+          let signerPublicKey;
+          let signerKeyPair;
 
           if (sourceType === 'p2tr') {
             signerAddress = taprootAddress;
@@ -1636,11 +1636,25 @@ window.addEventListener('load', async () => {
             signerKeyPair = walletKeyPair;
           }
 
+          const originalWalletAddress = walletAddress;
+          const originalWalletPublicKey = walletPublicKey;
+          const originalWalletKeyPair = walletKeyPair;
+
+          walletAddress = signerAddress;
+          walletPublicKey = signerPublicKey;
+          walletKeyPair = signerKeyPair;
+
           let result;
-          if (sourceType === 'bech32') {
-            result = await signTx(dest, amt);
-          } else {
-            result = await signTxWithPSBT(dest, amt);
+          try {
+            if (sourceType === 'bech32') {
+              result = await signTx(dest, amt);
+            } else {
+              result = await signTxWithPSBT(dest, amt);
+            }
+          } finally {
+            walletAddress = originalWalletAddress;
+            walletPublicKey = originalWalletPublicKey;
+            walletKeyPair = originalWalletKeyPair;
           }
 
           hex = result.hex;
