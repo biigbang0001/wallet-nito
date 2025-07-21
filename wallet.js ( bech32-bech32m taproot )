@@ -2,6 +2,7 @@ bitcoin.initEccLib(tinysecp);
 
 import * as bitcoin from 'https://esm.sh/bitcoinjs-lib@6.1.5?bundle';
 import * as tinysecp from 'https://esm.sh/@bitcoin-js/tiny-secp256k1-asmjs@2.2.3';
+import * as noble from 'https://esm.sh/@noble/secp256k1@1.7.1';
 import ECPairFactory from 'https://esm.sh/ecpair@3.0.0';
 import { Buffer } from 'https://esm.sh/buffer@6.0.3';
 import "./messaging.js";
@@ -272,7 +273,7 @@ async function initNetworkParams() {
 
 function genAddr(type) {
   try {
-    if (!['legacy', 'p2sh', 'bech32', 'p2tr'].includes(type)) {
+    if (!['legacy', 'p2sh', 'bech32'].includes(type)) {
       throw new Error(i18next.t('errors.invalid_address_type'));
     }
     const kp = ECPair.makeRandom({ network: NITO_NETWORK });
@@ -284,11 +285,8 @@ function genAddr(type) {
     } else if (type === 'p2sh') {
       const p2wpkh = bitcoin.payments.p2wpkh({ pubkey: pubkeyBuffer, network: NITO_NETWORK });
       address = bitcoin.payments.p2sh({ redeem: p2wpkh, network: NITO_NETWORK }).address;
-    } else if (type === 'bech32') {
+    } else {
       address = bitcoin.payments.p2wpkh({ pubkey: pubkeyBuffer, network: NITO_NETWORK }).address;
-    } else if (type === 'p2tr') {
-      const tapInternalPubkey = toXOnly(pubkeyBuffer);
-      address = bitcoin.payments.p2tr({ internalPubkey: tapInternalPubkey, network: NITO_NETWORK }).address;
     }
     return { address, privateKeyHex, privateKey: kp.toWIF() };
   } catch (e) {
@@ -359,8 +357,21 @@ function importHDWallet(seedOrXprv, passphrase = '') {
     const taprootNode = hdWallet.derivePath("m/86'/0'/0'/0/0");
     const tapInternalPubkey = toXOnly(taprootNode.publicKey);
     const p2tr = bitcoin.payments.p2tr({ internalPubkey: tapInternalPubkey, network: NITO_NETWORK });
-    const taprootSigner = ECPair.fromPrivateKey(taprootNode.privateKey, { network: NITO_NETWORK });
-    const tweakedTaprootSigner = tweakSigner(taprootSigner);
+    const taprootPrivateKey = taprootNode.privateKey;
+    const tapTweak = tapTweakHash(taprootNode.publicKey);
+    const n = BigInt('0xfffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364141');
+    const privBig = BigInt('0x' + taprootPrivateKey.toString('hex'));
+    const tweakBig = BigInt('0x' + tapTweak.toString('hex'));
+    const tweakedPrivBig = (privBig + tweakBig) % n;
+    const tweakedPrivateKey = Buffer.from(tweakedPrivBig.toString(16).padStart(64, '0'), 'hex');
+    const tweakedPublicKey = noble.getPublicKey(new Uint8Array(tweakedPrivateKey), true);
+
+    const taprootCustomSigner = {
+      network: NITO_NETWORK,
+      privateKey: tweakedPrivateKey,
+      publicKey: Buffer.from(tweakedPublicKey),
+      signSchnorr: (hash) => Buffer.from(noble.sign(new Uint8Array(hash), new Uint8Array(tweakedPrivateKey), { lowS: true }))
+    };
 
     return {
       legacy: p2pkh.address,
@@ -369,7 +380,7 @@ function importHDWallet(seedOrXprv, passphrase = '') {
       taproot: p2tr.address,
       keyPair: keyPair,
       publicKey: pubkey,
-      taprootKeyPair: tweakedTaprootSigner,
+      taprootKeyPair: taprootCustomSigner,
       taprootPublicKey: tapInternalPubkey,
       hdMasterKey: hdWallet.toBase58(),
       mnemonic: currentMnemonic
@@ -392,7 +403,20 @@ function importWIF(wif) {
     // Ajout Taproot (P2TR)
     const tapInternalPubkey = toXOnly(pubkeyBuffer);
     const p2tr = bitcoin.payments.p2tr({ internalPubkey: tapInternalPubkey, network: NITO_NETWORK });
-    const tweakedTaprootSigner = tweakSigner(kp);
+    const tapTweak = tapTweakHash(kp.publicKey);
+    const n = BigInt('0xfffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364141');
+    const privBig = BigInt('0x' + kp.privateKey.toString('hex'));
+    const tweakBig = BigInt('0x' + tapTweak.toString('hex'));
+    const tweakedPrivBig = (privBig + tweakBig) % n;
+    const tweakedPrivateKey = Buffer.from(tweakedPrivBig.toString(16).padStart(64, '0'), 'hex');
+    const tweakedPublicKey = noble.getPublicKey(new Uint8Array(tweakedPrivateKey), true);
+
+    const taprootCustomSigner = {
+      network: NITO_NETWORK,
+      privateKey: tweakedPrivateKey,
+      publicKey: Buffer.from(tweakedPublicKey),
+      signSchnorr: (hash) => Buffer.from(noble.sign(new Uint8Array(hash), new Uint8Array(tweakedPrivateKey), { lowS: true }))
+    };
 
     return {
       legacy: p2pkh.address,
@@ -401,7 +425,7 @@ function importWIF(wif) {
       taproot: p2tr.address,
       keyPair: kp,
       publicKey: pubkeyBuffer,
-      taprootKeyPair: tweakedTaprootSigner,
+      taprootKeyPair: taprootCustomSigner,
       taprootPublicKey: tapInternalPubkey
     };
   } catch (e) {
@@ -425,7 +449,20 @@ function importHex(hex) {
     // Ajout Taproot (P2TR)
     const tapInternalPubkey = toXOnly(pubkeyBuffer);
     const p2tr = bitcoin.payments.p2tr({ internalPubkey: tapInternalPubkey, network: NITO_NETWORK });
-    const tweakedTaprootSigner = tweakSigner(kp);
+    const tapTweak = tapTweakHash(kp.publicKey);
+    const n = BigInt('0xfffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364141');
+    const privBig = BigInt('0x' + kp.privateKey.toString('hex'));
+    const tweakBig = BigInt('0x' + tapTweak.toString('hex'));
+    const tweakedPrivBig = (privBig + tweakBig) % n;
+    const tweakedPrivateKey = Buffer.from(tweakedPrivBig.toString(16).padStart(64, '0'), 'hex');
+    const tweakedPublicKey = noble.getPublicKey(new Uint8Array(tweakedPrivateKey), true);
+
+    const taprootCustomSigner = {
+      network: NITO_NETWORK,
+      privateKey: tweakedPrivateKey,
+      publicKey: Buffer.from(tweakedPublicKey),
+      signSchnorr: (hash) => Buffer.from(noble.sign(new Uint8Array(hash), new Uint8Array(tweakedPrivateKey), { lowS: true }))
+    };
 
     return {
       legacy: p2pkh.address,
@@ -434,7 +471,7 @@ function importHex(hex) {
       taproot: p2tr.address,
       keyPair: kp,
       publicKey: pubkeyBuffer,
-      taprootKeyPair: tweakedTaprootSigner,
+      taprootKeyPair: taprootCustomSigner,
       taprootPublicKey: tapInternalPubkey
     };
   } catch (e) {
@@ -482,7 +519,7 @@ async function balance(addr) {
 
 function getAddressType(addr) {
   try {
-    if (addr.startsWith('nito1q')) return 'p2tr';
+    if (addr.startsWith('nito1p')) return 'p2tr';
     if (addr.startsWith('nito1')) return 'p2wpkh';
     if (addr.startsWith('3')) return 'p2sh';
     if (addr.startsWith('1')) return 'p2pkh';
@@ -535,14 +572,6 @@ function toXOnly(pubkey) {
 
 function tapTweakHash(pubKey, h = Buffer.alloc(0)) {
   return bitcoin.crypto.taggedHash('TapTweak', Buffer.concat([toXOnly(pubKey), h]));
-}
-
-function tweakSigner(signer, opts = {}) {
-  let privateKey = signer.privateKey;
-  const tweak = tapTweakHash(signer.publicKey, opts.tweakHash);
-  privateKey = tinysecp.privateAdd(privateKey, tweak);
-  if (!privateKey) throw new Error('Invalid tweak');
-  return ECPair.fromPrivateKey(privateKey, { network: signer.network });
 }
 
 function getP2SHAddress(pubkeyBuffer) {
@@ -627,18 +656,11 @@ async function signTxBatch(to, amt, specificUtxos, isConsolidation = true) {
     psbt.addOutput({ address: walletAddress, value: change });
   }
 
-  const signer = {
-    network: walletKeyPair.network,
-    privateKey: walletKeyPair.privateKey,
-    publicKey: sendScriptType === 'p2tr' ? taprootPublicKey : walletPublicKey,
-    sign: (hash) => Buffer.from(walletKeyPair.sign(hash))
-  };
-
   for (let i = 0; i < selectedIns.length; i++) {
     if (sendScriptType === 'p2tr') {
-      psbt.signInput(i, walletKeyPair); // SIGHASH_DEFAULT pour Taproot
+      psbt.signInput(i, taprootKeyPair);
     } else {
-      psbt.signInput(i, signer, [bitcoin.Transaction.SIGHASH_ALL]);
+      psbt.signInput(i, walletKeyPair);
     }
   }
 
@@ -852,7 +874,7 @@ async function signTxWithPSBT(to, amt, isConsolidation = false) {
   for (let i = 0; i < selectedIns.length; i++) {
     try {
       if (sendScriptType === 'p2tr') {
-        psbt.signInput(i, walletKeyPair); // SIGHASH_DEFAULT pour Taproot
+        psbt.signInput(i, taprootKeyPair);
       } else {
         psbt.signInput(i, signer, [bitcoin.Transaction.SIGHASH_ALL]);
       }
@@ -926,13 +948,13 @@ async function consolidateUtxos() {
     }
 
     const sourceType = $('debitAddressType').value;
-    if (!['bech32', 'p2tr'].includes(sourceType)) {
-      alert('Seulement Bech32 ou Taproot supporté pour la consolidation');
+    if (!['bech32'].includes(sourceType)) {
+      alert(i18next.t('errors.consolidation_bech32_only'));
       console.error('Invalid source type:', sourceType);
       return;
     }
 
-    const sourceAddress = sourceType === 'p2tr' ? taprootAddress : bech32Address;
+    const sourceAddress = bech32Address;
     console.log('Consolidating UTXOs for:', sourceAddress);
 
     showLoadingSpinner();
@@ -1036,14 +1058,14 @@ async function consolidateUtxos() {
 
         const target = batchTotal;
 
-        if (target < getDustThreshold(sourceType)) {
+        if (target < getDustThreshold('p2wpkh')) {
           console.log(`⚠️ Montant trop petit (${target / 1e8} NITO), consolidation terminée`);
           break;
         }
 
         // Calculer le montant après déduction des frais
         const feeRate = DYNAMIC_FEE_RATE || MIN_FEE_RATE;
-        const estimatedFees = Math.round((batchUtxos.length * (sourceType === 'p2tr' ? 57.5 : 68) + 50) * (feeRate * 1e8) / 1000);
+        const estimatedFees = Math.round((batchUtxos.length * 68 + 50) * (feeRate * 1e8) / 1000);
         const amountToSend = (batchTotal - estimatedFees) / 1e8;
 
         console.log(`🚀 Étape ${stepCount} - Consolidation: ${batchUtxos.length} UTXOs → 1 UTXO (${amountToSend} NITO)`);
@@ -1311,11 +1333,21 @@ window.addEventListener('load', async () => {
         const taprootNode = hdWallet.derivePath("m/86'/0'/0'/0/0");
         const tapInternalPubkey = toXOnly(taprootNode.publicKey);
         const p2tr = bitcoin.payments.p2tr({ internalPubkey: tapInternalPubkey, network: NITO_NETWORK });
-        const taprootSigner = ECPair.fromPrivateKey(taprootNode.privateKey, { network: NITO_NETWORK });
-        const tweakedTaprootSigner = tweakSigner(taprootSigner);
-        taprootAddress = p2tr.address;
-        taprootPublicKey = tapInternalPubkey;
-        taprootKeyPair = tweakedTaprootSigner;
+        const taprootPrivateKey = taprootNode.privateKey;
+        const tapTweak = tapTweakHash(taprootNode.publicKey);
+        const n = BigInt('0xfffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364141');
+        const privBig = BigInt('0x' + taprootPrivateKey.toString('hex'));
+        const tweakBig = BigInt('0x' + tapTweak.toString('hex'));
+        const tweakedPrivBig = (privBig + tweakBig) % n;
+        const tweakedPrivateKey = Buffer.from(tweakedPrivBig.toString(16).padStart(64, '0'), 'hex');
+        const tweakedPublicKey = noble.getPublicKey(new Uint8Array(tweakedPrivateKey), true);
+
+        const taprootCustomSigner = {
+          network: NITO_NETWORK,
+          privateKey: tweakedPrivateKey,
+          publicKey: Buffer.from(tweakedPublicKey),
+          signSchnorr: (hash) => Buffer.from(noble.sign(new Uint8Array(hash), new Uint8Array(tweakedPrivateKey), { lowS: true }))
+        };
 
         const addresses = {
           legacy: p2pkh.address,
@@ -1639,14 +1671,7 @@ window.addEventListener('load', async () => {
           let result;
           if (sourceType === 'bech32' && destType === 'p2wpkh') {
             walletAddress = bech32Address;
-            walletPublicKey = walletPublicKey; // Bech32 pubkey
-            walletKeyPair = walletKeyPair; // Bech32 keypair
             result = await signTx(dest, amt);
-          } else if (sourceType === 'p2tr') {
-            walletAddress = taprootAddress;
-            walletPublicKey = taprootPublicKey;
-            walletKeyPair = taprootKeyPair;
-            result = await signTxWithPSBT(dest, amt);
           } else {
             walletAddress = sourceType === 'legacy' ? legacyAddress : sourceType === 'p2sh' ? p2shAddress : bech32Address;
             result = await signTxWithPSBT(dest, amt);
