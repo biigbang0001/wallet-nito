@@ -53,6 +53,7 @@ let consolidateButtonInjected = false;
 let lastActionTime = null;
 let inactivityTimeout = null;
 let timerInterval = null;
+let importType = ''; // 'single' for WIF/Hex, 'hd' for xprv/mnemonic
 
 // Initialiser i18next avec l'objet global window.i18next
 i18next
@@ -399,34 +400,12 @@ function importWIF(wif) {
     const p2pkh = bitcoin.payments.p2pkh({ pubkey: pubkeyBuffer, network: NITO_NETWORK });
     const p2wpkh = bitcoin.payments.p2wpkh({ pubkey: pubkeyBuffer, network: NITO_NETWORK });
     const p2sh = bitcoin.payments.p2sh({ redeem: p2wpkh, network: NITO_NETWORK });
-
-    // Ajout Taproot (P2TR)
-    const tapInternalPubkey = toXOnly(pubkeyBuffer);
-    const p2tr = bitcoin.payments.p2tr({ internalPubkey: tapInternalPubkey, network: NITO_NETWORK });
-    const tapTweak = tapTweakHash(kp.publicKey);
-    const n = BigInt('0xfffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364141');
-    const privBig = BigInt('0x' + kp.privateKey.toString('hex'));
-    const tweakBig = BigInt('0x' + tapTweak.toString('hex'));
-    const tweakedPrivBig = (privBig + tweakBig) % n;
-    const tweakedPrivateKey = Buffer.from(tweakedPrivBig.toString(16).padStart(64, '0'), 'hex');
-    const tweakedPublicKey = noble.getPublicKey(new Uint8Array(tweakedPrivateKey), true);
-
-    const taprootCustomSigner = {
-      network: NITO_NETWORK,
-      privateKey: tweakedPrivateKey,
-      publicKey: Buffer.from(tweakedPublicKey),
-      signSchnorr: (hash) => Buffer.from(noble.sign(new Uint8Array(hash), new Uint8Array(tweakedPrivateKey), { lowS: true }))
-    };
-
     return {
       legacy: p2pkh.address,
       p2sh: p2sh.address,
       bech32: p2wpkh.address,
-      taproot: p2tr.address,
       keyPair: kp,
-      publicKey: pubkeyBuffer,
-      taprootKeyPair: taprootCustomSigner,
-      taprootPublicKey: tapInternalPubkey
+      publicKey: pubkeyBuffer
     };
   } catch (e) {
     console.error('Error in importWIF:', e);
@@ -445,34 +424,12 @@ function importHex(hex) {
     const p2pkh = bitcoin.payments.p2pkh({ pubkey: pubkeyBuffer, network: NITO_NETWORK });
     const p2wpkh = bitcoin.payments.p2wpkh({ pubkey: pubkeyBuffer, network: NITO_NETWORK });
     const p2sh = bitcoin.payments.p2sh({ redeem: p2wpkh, network: NITO_NETWORK });
-
-    // Ajout Taproot (P2TR)
-    const tapInternalPubkey = toXOnly(pubkeyBuffer);
-    const p2tr = bitcoin.payments.p2tr({ internalPubkey: tapInternalPubkey, network: NITO_NETWORK });
-    const tapTweak = tapTweakHash(kp.publicKey);
-    const n = BigInt('0xfffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364141');
-    const privBig = BigInt('0x' + kp.privateKey.toString('hex'));
-    const tweakBig = BigInt('0x' + tapTweak.toString('hex'));
-    const tweakedPrivBig = (privBig + tweakBig) % n;
-    const tweakedPrivateKey = Buffer.from(tweakedPrivBig.toString(16).padStart(64, '0'), 'hex');
-    const tweakedPublicKey = noble.getPublicKey(new Uint8Array(tweakedPrivateKey), true);
-
-    const taprootCustomSigner = {
-      network: NITO_NETWORK,
-      privateKey: tweakedPrivateKey,
-      publicKey: Buffer.from(tweakedPublicKey),
-      signSchnorr: (hash) => Buffer.from(noble.sign(new Uint8Array(hash), new Uint8Array(tweakedPrivateKey), { lowS: true }))
-    };
-
     return {
       legacy: p2pkh.address,
       p2sh: p2sh.address,
       bech32: p2wpkh.address,
-      taproot: p2tr.address,
       keyPair: kp,
-      publicKey: pubkeyBuffer,
-      taprootKeyPair: taprootCustomSigner,
-      taprootPublicKey: tapInternalPubkey
+      publicKey: pubkeyBuffer
     };
   } catch (e) {
     console.error('Error in importHex:', e);
@@ -864,33 +821,15 @@ async function signTxWithPSBT(to, amt, isConsolidation = false) {
     psbt.addOutput({ address: walletAddress, value: change });
   }
 
-  const signer = {
-    network: walletKeyPair.network,
-    privateKey: walletKeyPair.privateKey,
-    publicKey: sendScriptType === 'p2tr' ? taprootPublicKey : walletPublicKey,
-    sign: (hash) => Buffer.from(walletKeyPair.sign(hash))
-  };
-
   for (let i = 0; i < selectedIns.length; i++) {
-    try {
-      if (sendScriptType === 'p2tr') {
-        psbt.signInput(i, taprootKeyPair);
-      } else {
-        psbt.signInput(i, signer, [bitcoin.Transaction.SIGHASH_ALL]);
-      }
-    } catch (e) {
-      console.error(`Signature error for input ${i}:`, e);
-      throw new Error(i18next.t('errors.signature_failed', { input: i, message: e.message }));
+    if (sendScriptType === 'p2tr') {
+      psbt.signInput(i, taprootKeyPair);
+    } else {
+      psbt.signInput(i, walletKeyPair);
     }
   }
 
-  try {
-    psbt.finalizeAllInputs();
-  } catch (e) {
-    console.error('Error finalizing inputs:', e);
-    throw new Error(i18next.t('errors.finalization_failed', { message: e.message }));
-  }
-
+  psbt.finalizeAllInputs();
   const tx = psbt.extractTransaction();
   const hex = tx.toHex();
 
@@ -1313,23 +1252,21 @@ window.addEventListener('load', async () => {
       updateLastActionTime();
       try {
         // Générer la phrase mnémonique et la clé HD
-        const mnemonic = generateHDMnemonic(12);
+        const mnemonic = generateHDMnemonic(24);
         const seed = bip39.mnemonicToSeedSync(mnemonic);
         const hdWallet = bip32.fromSeed(seed);
         const hdMasterKey = hdWallet.toBase58();
 
-        // Dériver la première adresse bech32 (comme avant)
+        // Dériver la première adresse bech32
         const bech32Node = hdWallet.derivePath("m/84'/0'/0'/0/0");
-        const kp = ECPair.fromPrivateKey(bech32Node.privateKey, { network: NITO_NETWORK });
+        const pubkey = Buffer.from(bech32Node.publicKey);
+        const keyPair = ECPair.fromPrivateKey(bech32Node.privateKey, { network: NITO_NETWORK });
 
-        const privateKeyHex = Buffer.from(kp.privateKey).toString('hex');
-        const privateKey = kp.toWIF();
-        const pubkeyBuffer = Buffer.from(kp.publicKey);
-        const p2pkh = bitcoin.payments.p2pkh({ pubkey: pubkeyBuffer, network: NITO_NETWORK });
-        const p2wpkh = bitcoin.payments.p2wpkh({ pubkey: pubkeyBuffer, network: NITO_NETWORK });
+        const p2pkh = bitcoin.payments.p2pkh({ pubkey: pubkey, network: NITO_NETWORK });
+        const p2wpkh = bitcoin.payments.p2wpkh({ pubkey: pubkey, network: NITO_NETWORK });
         const p2sh = bitcoin.payments.p2sh({ redeem: p2wpkh, network: NITO_NETWORK });
 
-        // Ajout Taproot
+        // Dériver l'adresse Taproot (bech32m)
         const taprootNode = hdWallet.derivePath("m/86'/0'/0'/0/0");
         const tapInternalPubkey = toXOnly(taprootNode.publicKey);
         const p2tr = bitcoin.payments.p2tr({ internalPubkey: tapInternalPubkey, network: NITO_NETWORK });
@@ -1363,25 +1300,20 @@ window.addEventListener('load', async () => {
           throw new Error(i18next.t('errors.invalid_addresses'));
         }
 
-        const bech32Balance = await balance(addresses.bech32);
-        const taprootBalance = await balance(addresses.taproot);
-
-        // Afficher toutes les clés
-        $('privateKeyHex').textContent = privateKeyHex;
-        $('privateKey').textContent = privateKey;
+        // Afficher seulement xprv et mnémonique (pas WIF/Hex)
+        $('privateKeyHex').textContent = '';
+        $('privateKey').textContent = '';
         $('hdMasterKey').textContent = hdMasterKey;
         $('mnemonicPhrase').textContent = mnemonic;
 
-        // Flouter toutes les clés
-        $('privateKeyHex').classList.add('blurred');
-        $('privateKey').classList.add('blurred');
+        // Flouter
         $('hdMasterKey').classList.add('blurred');
         $('mnemonicPhrase').classList.add('blurred');
 
-        // Afficher l'adresse Bech32 et Bech32m en dessous
+        // Afficher adresses bech32 et bech32m (sans soldes)
         $('generatedAddress').innerHTML = DOMPurify.sanitize(`
-          Bech32: <span id="generatedBech32Address">${addresses.bech32}</span> <button class="copy-btn" id="copyGeneratedBech32Addr">📋</button> (Solde: ${bech32Balance.toFixed(8)} NITO)<br>
-          Bech32m (Taproot): <span id="generatedTaprootAddress">${addresses.taproot}</span> <button class="copy-btn" id="copyGeneratedTaprootAddr">📋</button> (Solde: ${taprootBalance.toFixed(8)} NITO)
+          Bech32: <span id="generatedBech32Address">${addresses.bech32}</span> <button class="copy-btn" id="copyGeneratedBech32Addr">📋</button><br>
+          Bech32m (Taproot): <span id="generatedTaprootAddress">${addresses.taproot}</span> <button class="copy-btn" id="copyGeneratedTaprootAddr">📋</button>
         `);
 
         const copyGeneratedBech32Addr = $('copyGeneratedBech32Addr');
@@ -1390,31 +1322,13 @@ window.addEventListener('load', async () => {
         const copyGeneratedTaprootAddr = $('copyGeneratedTaprootAddr');
         if (copyGeneratedTaprootAddr) copyGeneratedTaprootAddr.onclick = () => copyToClipboard('generatedTaprootAddress');
 
-        // Boutons de révélation existants
-        const revealHex = $('revealHex');
-        const revealWif = $('revealWif');
-        if (revealHex) {
-          revealHex.onclick = () => {
-            revealHex.disabled = true;
-            $('privateKeyHex').classList.remove('blurred');
-            setTimeout(() => {
-              $('privateKeyHex').classList.add('blurred');
-              revealHex.disabled = false;
-            }, 10000);
-          };
-        }
-        if (revealWif) {
-          revealWif.onclick = () => {
-            revealWif.disabled = true;
-            $('privateKey').classList.remove('blurred');
-            setTimeout(() => {
-              $('privateKey').classList.add('blurred');
-              revealWif.disabled = false;
-            }, 10000);
-          };
-        }
+        // Masquer les éléments WIF/Hex si présent (e.g., sections HTML)
+        const wifSection = document.getElementById('wifSection'); // Assumer ID pour la section WIF
+        const hexSection = document.getElementById('hexSection'); // Assumer ID pour la section Hex
+        if (wifSection) wifSection.style.display = 'none';
+        if (hexSection) hexSection.style.display = 'none';
 
-        // NOUVEAUX boutons de révélation HD
+        // Boutons de révélation HD
         const revealHdKey = $('revealHdKey');
         const revealMnemonic = $('revealMnemonic');
         if (revealHdKey) {
@@ -1460,47 +1374,54 @@ window.addEventListener('load', async () => {
 
         let addresses;
 
-        // Détection automatique du type d'entrée
         if (input.startsWith('xprv')) {
           // Clé HD (xprv)
           addresses = importHDWallet(input, hdPassphrase);
+          importType = 'hd';
         } else if (input.split(' ').length >= 12 && input.split(' ').length <= 24) {
           // Phrase mnémonique (12 ou 24 mots)
           addresses = importHDWallet(input, hdPassphrase);
+          importType = 'hd';
         } else if (/^[0-9a-fA-F]{64}$/.test(input)) {
           // Clé privée hex (64 caractères)
           addresses = importHex(input);
+          importType = 'single';
         } else {
           // Clé privée WIF
           addresses = importWIF(input);
+          importType = 'single';
         }
 
         if (!await validateAddress(addresses.legacy) ||
             !await validateAddress(addresses.p2sh) ||
             !await validateAddress(addresses.bech32) ||
-            !await validateAddress(addresses.taproot)) {
+            (importType === 'hd' && !await validateAddress(addresses.taproot))) {
           throw new Error(i18next.t('errors.invalid_addresses'));
         }
 
         legacyAddress = addresses.legacy;
         p2shAddress = addresses.p2sh;
         bech32Address = addresses.bech32;
-        taprootAddress = addresses.taproot;
+        taprootAddress = addresses.taproot || '';
         walletAddress = bech32Address;
         walletPublicKey = addresses.publicKey;
         walletKeyPair = addresses.keyPair;
-        taprootPublicKey = addresses.taprootPublicKey;
-        taprootKeyPair = addresses.taprootKeyPair;
+        taprootPublicKey = addresses.taprootPublicKey || null;
+        taprootKeyPair = addresses.taprootKeyPair || null;
 
-        const bech32Balance = await balance(addresses.bech32);
-        const taprootBalance = await balance(addresses.taproot);
+        const bech32Balance = await balance(bech32Address);
+        let taprootBalance = 0;
+        let addressDisplay = `
+          Bech32: <span id="bech32Address">${bech32Address}</span> <button class="copy-btn" id="copyBech32Addr">📋</button> (Solde: ${bech32Balance.toFixed(8)} NITO)
+        `;
 
-        // Afficher l'adresse Bech32 et Bech32m en dessous
-        $('walletAddress').innerHTML = DOMPurify.sanitize(`
-          Bech32: <span id="bech32Address">${addresses.bech32}</span> <button class="copy-btn" id="copyBech32Addr">📋</button> (Solde: ${bech32Balance.toFixed(8)} NITO)<br>
-          Bech32m (Taproot): <span id="taprootAddress">${addresses.taproot}</span> <button class="copy-btn" id="copyTaprootAddr">📋</button> (Solde: ${taprootBalance.toFixed(8)} NITO)
-        `);
-        $('walletBalance').innerHTML = `Bech32: ${bech32Balance.toFixed(8)} | Taproot: ${taprootBalance.toFixed(8)}`;
+        if (importType === 'hd') {
+          taprootBalance = await balance(taprootAddress);
+          addressDisplay += `<br>Bech32m (Taproot): <span id="taprootAddress">${taprootAddress}</span> <button class="copy-btn" id="copyTaprootAddr">📋</button> (Solde: ${taprootBalance.toFixed(8)} NITO)`;
+        }
+
+        $('walletAddress').innerHTML = DOMPurify.sanitize(addressDisplay);
+        $('walletBalance').innerHTML = `Solde : Bech32: ${bech32Balance.toFixed(8)}` + (importType === 'hd' ? ` | Bech32m (Taproot): ${taprootBalance.toFixed(8)} NITO` : ' NITO');
 
         const filteredAddresses = {
           legacy: addresses.legacy,
@@ -1535,7 +1456,33 @@ window.addEventListener('load', async () => {
         if (copyBech32Addr) copyBech32Addr.onclick = () => copyToClipboard('bech32Address');
 
         const copyTaprootAddr = $('copyTaprootAddr');
-        if (copyTaprootAddr) copyTaprootAddr.onclick = () => copyToClipboard('taprootAddress');
+        if (copyTaprootAddr && importType === 'hd') copyTaprootAddr.onclick = () => copyToClipboard('taprootAddress');
+
+        // Adapter le menu sélecteur debitAddressType dynamiquement
+        const debitTypeSelect = $('debitAddressType');
+        if (debitTypeSelect) {
+          // Effacer les options actuelles
+          debitTypeSelect.innerHTML = '';
+
+          // Pour single (WIF/Hex) : seulement bech32
+          if (importType === 'single') {
+            const bech32Option = document.createElement('option');
+            bech32Option.value = 'bech32';
+            bech32Option.textContent = 'bech32';
+            debitTypeSelect.appendChild(bech32Option);
+          } else if (importType === 'hd') {
+            // Pour HD : seulement bech32 et bech32m
+            const bech32Option = document.createElement('option');
+            bech32Option.value = 'bech32';
+            bech32Option.textContent = 'bech32';
+            debitTypeSelect.appendChild(bech32Option);
+
+            const taprootOption = document.createElement('option');
+            taprootOption.value = 'p2tr';
+            taprootOption.textContent = 'bech32m';
+            debitTypeSelect.appendChild(taprootOption);
+          }
+        }
 
         const consolidateContainer = document.querySelector('.consolidate-container');
         if (!consolidateContainer) {
@@ -1620,25 +1567,34 @@ window.addEventListener('load', async () => {
       if (!walletAddress) return alert(i18next.t('errors.import_first'));
       try {
         const bech32Balance = await balance(bech32Address);
-        const taprootBalance = await balance(taprootAddress);
+        let taprootBalance = 0;
+        let balanceDisplay = `Solde : Bech32: ${bech32Balance.toFixed(8)} NITO`;
 
-        if (!await validateAddress(bech32Address) || !await validateAddress(taprootAddress)) {
+        if (importType === 'hd') {
+          taprootBalance = await balance(taprootAddress);
+          balanceDisplay = `Solde : Bech32: ${bech32Balance.toFixed(8)} | Bech32m (Taproot): ${taprootBalance.toFixed(8)} NITO`;
+        }
+
+        if (!await validateAddress(bech32Address) || (importType === 'hd' && !await validateAddress(taprootAddress))) {
           throw new Error(i18next.t('errors.invalid_addresses'));
         }
 
-        const safeBech32 = bech32Address;
-        const safeTaproot = taprootAddress;
-        $('walletAddress').innerHTML = DOMPurify.sanitize(`
-          Bech32: <span id="bech32Address">${safeBech32}</span> <button class="copy-btn" id="copyBech32Addr">📋</button> (Solde: ${bech32Balance.toFixed(8)} NITO)<br>
-          Bech32m (Taproot): <span id="taprootAddress">${safeTaproot}</span> <button class="copy-btn" id="copyTaprootAddr">📋</button> (Solde: ${taprootBalance.toFixed(8)} NITO)
-        `);
-        $('walletBalance').innerHTML = `Bech32: ${bech32Balance.toFixed(8)} | Taproot: ${taprootBalance.toFixed(8)}`;
+        let addressDisplay = `
+          Bech32: <span id="bech32Address">${bech32Address}</span> <button class="copy-btn" id="copyBech32Addr">📋</button> (Solde: ${bech32Balance.toFixed(8)} NITO)
+        `;
+
+        if (importType === 'hd') {
+          addressDisplay += `<br>Bech32m (Taproot): <span id="taprootAddress">${taprootAddress}</span> <button class="copy-btn" id="copyTaprootAddr">📋</button> (Solde: ${taprootBalance.toFixed(8)} NITO)`;
+        }
+
+        $('walletAddress').innerHTML = DOMPurify.sanitize(addressDisplay);
+        $('walletBalance').innerHTML = balanceDisplay;
 
         const copyBech32Addr = $('copyBech32Addr');
         if (copyBech32Addr) copyBech32Addr.onclick = () => copyToClipboard('bech32Address');
 
         const copyTaprootAddr = $('copyTaprootAddr');
-        if (copyTaprootAddr) copyTaprootAddr.onclick = () => copyToClipboard('taprootAddress');
+        if (copyTaprootAddr && importType === 'hd') copyTaprootAddr.onclick = () => copyToClipboard('taprootAddress');
       } catch (e) {
         alert(i18next.t('errors.refresh_error', { message: e.message }));
         console.error('Refresh error:', e);
@@ -1669,9 +1625,16 @@ window.addEventListener('load', async () => {
 
         try {
           let result;
-          if (sourceType === 'bech32' && destType === 'p2wpkh') {
+          if (sourceType === 'bech32') {
             walletAddress = bech32Address;
+            walletPublicKey = walletPublicKey;
+            walletKeyPair = walletKeyPair;
             result = await signTx(dest, amt);
+          } else if (sourceType === 'p2tr') {
+            walletAddress = taprootAddress;
+            walletPublicKey = taprootPublicKey;
+            walletKeyPair = taprootKeyPair;
+            result = await signTxWithPSBT(dest, amt);
           } else {
             walletAddress = sourceType === 'legacy' ? legacyAddress : sourceType === 'p2sh' ? p2shAddress : bech32Address;
             result = await signTxWithPSBT(dest, amt);
