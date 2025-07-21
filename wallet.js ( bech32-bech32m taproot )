@@ -1397,7 +1397,7 @@ window.addEventListener('load', async () => {
         if (!await validateAddress(addresses.legacy) ||
             !await validateAddress(addresses.p2sh) ||
             !await validateAddress(addresses.bech32) ||
-            (addresses.taproot && !await validateAddress(addresses.taproot))) {
+            (importType === 'hd' && addresses.taproot && !await validateAddress(addresses.taproot))) {
           throw new Error(i18next.t('errors.invalid_addresses'));
         }
 
