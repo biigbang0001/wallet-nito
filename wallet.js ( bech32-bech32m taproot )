@@ -1,7 +1,7 @@
-bitcoin.initEccLib(tinysecp);
+bitcoin.initEccLib(ecc);
 
-import * as bitcoin from 'https://esm.sh/bitcoinjs-lib@6.1.5?bundle';
-import * as tinysecp from 'https://esm.sh/@bitcoin-js/tiny-secp256k1-asmjs@2.2.3';
+import * as bitcoin from 'https://esm.sh/bitcoinjs-lib@6.1.6?bundle';
+import ecc from 'https://esm.sh/@bitcoinerlab/secp256k1@1.0.5';
 import * as noble from 'https://esm.sh/@noble/secp256k1@1.7.1';
 import ECPairFactory from 'https://esm.sh/ecpair@3.0.0';
 import { Buffer } from 'https://esm.sh/buffer@6.0.3';
@@ -10,13 +10,13 @@ import * as bip39 from 'https://esm.sh/bip39@3.1.0';
 import bip32Factory from 'https://esm.sh/bip32@4.0.0';
 window.Buffer = Buffer;
 
-const bip32 = bip32Factory(tinysecp);
+const bip32 = bip32Factory(ecc);
 
 // === Extension HD ===
 let hdWallet = null;
 let currentMnemonic = null;
 
-const ECPair = ECPairFactory(tinysecp);
+const ECPair = ECPairFactory(ecc);
 
 const NITO_NETWORK = {
   messagePrefix: '\x18Nito Signed Message:\n',
@@ -356,15 +356,11 @@ function importHDWallet(seedOrXprv, passphrase = '') {
 
     // Ajout Taproot (P2TR)
     const taprootNode = hdWallet.derivePath("m/86'/0'/0'/0/0");
-    const tapInternalPubkey = toXOnly(taprootNode.publicKey);
+    const tapInternalPubkey = taprootNode.publicKey.slice(1, 33); // Uint8Array natif
     const p2tr = bitcoin.payments.p2tr({ internalPubkey: tapInternalPubkey, network: NITO_NETWORK });
 
-    // Utilise les clés UNTWWEAKED pour le signer (bitcoinjs-lib tweakera automatiquement)
-    const taprootCustomSigner = {
-      network: NITO_NETWORK,
-      privateKey: taprootNode.privateKey,  // UNTWWEAKED (Buffer)
-      publicKey: taprootNode.publicKey     // UNTWWEAKED compressed (Buffer)
-    };
+    // Utilise ECPair pour compatibilité avec tweakSigner
+    const taprootKeyPair = ECPair.fromPrivateKey(taprootNode.privateKey, { network: NITO_NETWORK });
 
     return {
       legacy: p2pkh.address,
@@ -373,7 +369,7 @@ function importHDWallet(seedOrXprv, passphrase = '') {
       taproot: p2tr.address,
       keyPair: keyPair,
       publicKey: pubkey,
-      taprootKeyPair: taprootCustomSigner,
+      taprootKeyPair: taprootKeyPair,
       taprootPublicKey: tapInternalPubkey,
       hdMasterKey: hdWallet.toBase58(),
       mnemonic: currentMnemonic
@@ -516,11 +512,11 @@ function estimateTxSize(scriptType, numInputs, numOutputs, destScriptType) {
 }
 
 function toXOnly(pubkey) {
-  return pubkey.slice(1, 33);
+  return pubkey.slice(1, 33); // Uint8Array
 }
 
 function tapTweakHash(pubKey, h = Buffer.alloc(0)) {
-  return bitcoin.crypto.taggedHash('TapTweak', Buffer.concat([toXOnly(pubKey), h]));
+  return bitcoin.crypto.taggedHash('TapTweak', Buffer.concat([Buffer.from(toXOnly(pubKey)), h]));
 }
 
 function getP2SHAddress(pubkeyBuffer) {
@@ -607,7 +603,9 @@ async function signTxBatch(to, amt, specificUtxos, isConsolidation = true) {
 
   for (let i = 0; i < selectedIns.length; i++) {
     if (sendScriptType === 'p2tr') {
-      psbt.signInput(i, taprootKeyPair);
+      const tweaker = (pubkey) => bitcoin.crypto.taggedHash('TapTweak', pubkey.slice(1, 33));
+      const tweakedSigner = bitcoin.payments.tweakSigner(taprootKeyPair, { network: NITO_NETWORK, tweaker });
+      psbt.signInput(i, tweakedSigner);
     } else {
       psbt.signInput(i, walletKeyPair);
     }
@@ -815,7 +813,9 @@ async function signTxWithPSBT(to, amt, isConsolidation = false) {
 
   for (let i = 0; i < selectedIns.length; i++) {
     if (sendScriptType === 'p2tr') {
-      psbt.signInput(i, taprootKeyPair);
+      const tweaker = (pubkey) => bitcoin.crypto.taggedHash('TapTweak', pubkey.slice(1, 33));
+      const tweakedSigner = bitcoin.payments.tweakSigner(taprootKeyPair, { network: NITO_NETWORK, tweaker });
+      psbt.signInput(i, tweakedSigner);
     } else {
       psbt.signInput(i, walletKeyPair);
     }
@@ -929,14 +929,14 @@ async function consolidateUtxos() {
       `);
       document.body.appendChild(popup);
 
-      const confirmButton = document.getElementById('confirmConsolidate');
-      const cancelButton = document.getElementById('cancelConsolidate');
+      const confirmBtn = document.getElementById('confirmConsolidate');
+      const cancelBtn = document.getElementById('cancelConsolidate');
 
-      confirmButton.onclick = () => {
+      confirmBtn.onclick = () => {
         document.body.removeChild(popup);
         resolve(true);
       };
-      cancelButton.onclick = () => {
+      cancelBtn.onclick = () => {
         document.body.removeChild(popup);
         resolve(false);
       };
@@ -1260,23 +1260,10 @@ window.addEventListener('load', async () => {
 
         // Dériver l'adresse Taproot (bech32m)
         const taprootNode = hdWallet.derivePath("m/86'/0'/0'/0/0");
-        const tapInternalPubkey = toXOnly(taprootNode.publicKey);
+        const tapInternalPubkey = taprootNode.publicKey.slice(1, 33); // Uint8Array natif
         const p2tr = bitcoin.payments.p2tr({ internalPubkey: tapInternalPubkey, network: NITO_NETWORK });
-        const taprootPrivateKey = taprootNode.privateKey;
-        const tapTweak = tapTweakHash(taprootNode.publicKey);
-        const n = BigInt('0xfffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364141');
-        const privBig = BigInt('0x' + taprootPrivateKey.toString('hex'));
-        const tweakBig = BigInt('0x' + tapTweak.toString('hex'));
-        const tweakedPrivBig = (privBig + tweakBig) % n;
-        const tweakedPrivateKey = Buffer.from(tweakedPrivBig.toString(16).padStart(64, '0'), 'hex');
-        const tweakedPublicKey = noble.getPublicKey(new Uint8Array(tweakedPrivateKey), true);
 
-        const taprootCustomSigner = {
-          network: NITO_NETWORK,
-          privateKey: tweakedPrivateKey,
-          publicKey: Buffer.from(tweakedPublicKey),
-          signSchnorr: (hash) => Buffer.from(noble.sign(new Uint8Array(hash), new Uint8Array(tweakedPrivateKey), { lowS: true }))
-        };
+        const taprootKeyPair = ECPair.fromPrivateKey(taprootNode.privateKey, { network: NITO_NETWORK });
 
         const addresses = {
           legacy: p2pkh.address,
