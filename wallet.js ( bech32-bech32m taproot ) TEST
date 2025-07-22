@@ -12,11 +12,40 @@ window.Buffer = Buffer;
 
 const bip32 = bip32Factory(ecc);
 
+// Wrapper pour ecc afin de forcer Buffer sur les retours (fix TypeError: Argument must be a Buffer)
+const wrappedEcc = {
+  ...ecc,
+  pointFromScalar: (d, compressed) => {
+    const result = ecc.pointFromScalar(d, compressed);
+    return result ? Buffer.from(result) : null;
+  },
+  pointAdd: (p1, p2, compressed) => {
+    const result = ecc.pointAdd(p1, p2, compressed);
+    return result ? Buffer.from(result) : null;
+  },
+  pointAddScalar: (p, scalar, compressed) => {
+    const result = ecc.pointAddScalar(p, scalar, compressed);
+    return result ? Buffer.from(result) : null;
+  },
+  pointMultiply: (p, scalar, compressed) => {
+    const result = ecc.pointMultiply(p, scalar, compressed);
+    return result ? Buffer.from(result) : null;
+  },
+  privateAdd: (d, tweak) => {
+    const result = ecc.privateAdd(d, tweak);
+    return result ? Buffer.from(result) : null;
+  },
+  privateNegate: (d) => Buffer.from(ecc.privateNegate(d)),
+  sign: (hash, privateKey, extraEntropy) => Buffer.from(ecc.sign(hash, privateKey, extraEntropy)),
+  signSchnorr: (hash, privateKey, extraEntropy) => Buffer.from(ecc.signSchnorr(hash, privateKey, extraEntropy))
+};
+bitcoin.initEccLib(wrappedEcc);
+
 // === Extension HD ===
 let hdWallet = null;
 let currentMnemonic = null;
 
-const ECPair = ECPairFactory(ecc);
+const ECPair = ECPairFactory(wrappedEcc);
 
 const NITO_NETWORK = {
   messagePrefix: '\x18Nito Signed Message:\n',
@@ -262,7 +291,7 @@ async function initNetworkParams() {
   try {
     const feeInfo = await rpc('estimatesmartfee', [6]);
     const rawFeeRate = feeInfo.feerate || MIN_FEE_RATE;
-    DYNAMIC_FEE_RATE = rawFeeRate;
+    DYNAMIC_FEE_RATE = Math.max(rawFeeRate * 1.2, MIN_FEE_RATE);
     window.DYNAMIC_FEE_RATE = DYNAMIC_FEE_RATE;
     console.log('Dynamic fee rate:', DYNAMIC_FEE_RATE);
   } catch (e) {
@@ -523,18 +552,18 @@ function tweakSigner(signer, opts = {}) {
   let privateKey = Uint8Array.from(signer.privateKey);
   const publicKey = Uint8Array.from(signer.publicKey);
   if (publicKey[0] === 3) {
-    privateKey = ecc.privateNegate(privateKey);
+    privateKey = wrappedEcc.privateNegate(privateKey);
   }
   const tweakHash = opts.tweakHash ? Buffer.from(opts.tweakHash) : Buffer.alloc(0);
   const tweak = Uint8Array.from(tapTweakHash(signer.publicKey, tweakHash));
-  const tweakedPrivateKey = ecc.privateAdd(privateKey, tweak);
+  const tweakedPrivateKey = wrappedEcc.privateAdd(privateKey, tweak);
   if (!tweakedPrivateKey) {
     throw new Error('Invalid tweaked private key!');
   }
-  const tweakedPublicKey = Buffer.from(ecc.pointFromScalar(tweakedPrivateKey, true));
+  const tweakedPublicKey = wrappedEcc.pointFromScalar(tweakedPrivateKey, true);
   return {
     publicKey: tweakedPublicKey,
-    signSchnorr: (hash) => Buffer.from(ecc.signSchnorr(hash, tweakedPrivateKey, noble.utils.randomBytes(32)))
+    signSchnorr: (hash) => wrappedEcc.signSchnorr(hash, tweakedPrivateKey, noble.utils.randomBytes(32))
   };
 }
 
@@ -581,7 +610,7 @@ async function signTxBatch(to, amt, specificUtxos, isConsolidation = true) {
   // Calcul des frais basé sur les UTXOs réellement utilisés
   const feeRate = DYNAMIC_FEE_RATE || MIN_FEE_RATE;
   const fees = Math.max(
-    Math.round((selectedIns.length * (sendScriptType === 'p2tr' ? 57.5 : 68) + 50) * (feeRate * 1e8) / 1000),
+    Math.round((selectedIns.length * (sendScriptType === 'p2tr' ? 57.5 : 68) + 50) * (feeRate * 1.2 * 1e8) / 1000),
     Math.round(MIN_CONSOLIDATION_FEE * 1e8)
   );
 
@@ -594,7 +623,10 @@ async function signTxBatch(to, amt, specificUtxos, isConsolidation = true) {
   psbt.setVersion(2);
 
   for (const utxo of selectedIns) {
-    const scriptBuffer = Buffer.from(utxo.scriptPubKey, 'hex');
+    let scriptBuffer = Buffer.from(utxo.scriptPubKey, 'hex');
+    if (!(scriptBuffer instanceof Buffer)) {
+      scriptBuffer = Buffer.from(scriptBuffer);
+    }
     if (sendScriptType === 'p2wpkh') {
       psbt.addInput({
         hash: utxo.txid,
@@ -682,7 +714,7 @@ async function signTx(to, amt, isConsolidation = false) {
 
   const txSize = estimateTxSize(sendScriptType, selectedIns.length, 1, destScriptType);
   const feeRate = DYNAMIC_FEE_RATE || MIN_FEE_RATE;
-  const inputFee = Math.max(Math.round((selectedIns.length * 68 + 50) * (feeRate * 1e8) / 1000), Math.round(MIN_CONSOLIDATION_FEE * 1e8));
+  const inputFee = Math.max(Math.round((selectedIns.length * 68 + 50) * (feeRate * 1.2 * 1e8) / 1000), Math.round(MIN_CONSOLIDATION_FEE * 1e8));
 
   console.log('Estimated size:', txSize, 'vbytes, Fee:', inputFee / 1e8, 'NITO, Selected UTXOs:', selectedIns.length);
 
@@ -694,7 +726,10 @@ async function signTx(to, amt, isConsolidation = false) {
   psbt.setVersion(2);
 
   for (const utxo of selectedIns) {
-    const scriptBuffer = Buffer.from(utxo.scriptPubKey, 'hex');
+    let scriptBuffer = Buffer.from(utxo.scriptPubKey, 'hex');
+    if (!(scriptBuffer instanceof Buffer)) {
+      scriptBuffer = Buffer.from(scriptBuffer);
+    }
     psbt.addInput({
       hash: utxo.txid,
       index: utxo.vout,
@@ -785,7 +820,10 @@ async function signTxWithPSBT(to, amt, isConsolidation = false) {
   psbt.setVersion(2);
 
   for (const utxo of selectedIns) {
-    const scriptBuffer = Buffer.from(utxo.scriptPubKey, 'hex');
+    let scriptBuffer = Buffer.from(utxo.scriptPubKey, 'hex');
+    if (!(scriptBuffer instanceof Buffer)) {
+      scriptBuffer = Buffer.from(scriptBuffer);
+    }
     if (sendScriptType === 'p2wpkh') {
       psbt.addInput({
         hash: utxo.txid,
@@ -896,13 +934,13 @@ async function consolidateUtxos() {
     }
 
     const sourceType = $('debitAddressType').value;
-    if (!['bech32'].includes(sourceType)) {
+    if (!['bech32', 'p2tr'].includes(sourceType)) {
       alert(i18next.t('errors.consolidation_bech32_only'));
       console.error('Invalid source type:', sourceType);
       return;
     }
 
-    const sourceAddress = bech32Address;
+    const sourceAddress = (sourceType === 'p2tr') ? taprootAddress : bech32Address;
     console.log('Consolidating UTXOs for:', sourceAddress);
 
     showLoadingSpinner();
@@ -967,7 +1005,12 @@ async function consolidateUtxos() {
     showLoadingSpinner();
 
     const originalWalletAddress = walletAddress;
+    const originalWalletPublicKey = walletPublicKey;
+    const originalWalletKeyPair = walletKeyPair;
+
     walletAddress = sourceAddress;
+    walletPublicKey = (sourceType === 'p2tr') ? taprootPublicKey : walletPublicKey;
+    walletKeyPair = (sourceType === 'p2tr') ? taprootKeyPair : walletKeyPair;
 
     let currentUtxos = [...initialUtxos];
     let stepCount = 1;
@@ -1006,14 +1049,17 @@ async function consolidateUtxos() {
 
         const target = batchTotal;
 
-        if (target < getDustThreshold('p2wpkh')) {
+        if (target < getDustThreshold(sourceType === 'p2tr' ? 'p2tr' : 'p2wpkh')) {
           console.log(`⚠️ Montant trop petit (${target / 1e8} NITO), consolidation terminée`);
           break;
         }
 
         // Calculer le montant après déduction des frais
         const feeRate = DYNAMIC_FEE_RATE || MIN_FEE_RATE;
-        const estimatedFees = Math.round((batchUtxos.length * 68 + 50) * (feeRate * 1e8) / 1000);
+        const inputSize = (sourceType === 'p2tr') ? 57.5 : 68;
+        let estimatedFees = Math.round((batchUtxos.length * inputSize + 50) * (feeRate * 1.2 * 1e8) / 1000);
+        estimatedFees = Math.max(estimatedFees, Math.round(MIN_CONSOLIDATION_FEE * 1e8));
+
         const amountToSend = (batchTotal - estimatedFees) / 1e8;
 
         console.log(`🚀 Étape ${stepCount} - Consolidation: ${batchUtxos.length} UTXOs → 1 UTXO (${amountToSend} NITO)`);
@@ -1073,17 +1119,14 @@ async function consolidateUtxos() {
         alert(i18next.t('consolidation_stopped', { utxos: currentUtxos.length }));
       }
 
-    } catch (error) {
+    } catch (e) {
       hideLoadingSpinner();
-      if (error.message.includes('Transaction already in block chain')) {
-        await showSuccessPopup(lastTxid);
-        alert(i18next.t('consolidation_already_done'));
-        setTimeout(() => $('refreshBalanceButton').click(), 1000);
-      } else {
-        throw error;
-      }
+      alert(i18next.t('errors.consolidation_error', { message: e.message }));
+      console.error('Consolidation error:', e);
     } finally {
       walletAddress = originalWalletAddress;
+      walletPublicKey = originalWalletPublicKey;
+      walletKeyPair = originalWalletKeyPair;
     }
 
   } catch (e) {
