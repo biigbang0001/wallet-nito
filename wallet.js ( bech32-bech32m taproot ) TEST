@@ -356,7 +356,7 @@ function importHDWallet(seedOrXprv, passphrase = '') {
 
     // Ajout Taproot (P2TR)
     const taprootNode = hdWallet.derivePath("m/86'/0'/0'/0/0");
-    const tapInternalPubkey = taprootNode.publicKey.slice(1, 33); // Uint8Array natif
+    const tapInternalPubkey = toXOnly(taprootNode.publicKey);
     const p2tr = bitcoin.payments.p2tr({ internalPubkey: tapInternalPubkey, network: NITO_NETWORK });
 
     // Utilise ECPair pour compatibilité avec tweakSigner
@@ -512,11 +512,30 @@ function estimateTxSize(scriptType, numInputs, numOutputs, destScriptType) {
 }
 
 function toXOnly(pubkey) {
-  return pubkey.slice(1, 33); // Uint8Array
+  return Buffer.from(pubkey.slice(1, 33));
 }
 
 function tapTweakHash(pubKey, h = Buffer.alloc(0)) {
-  return bitcoin.crypto.taggedHash('TapTweak', Buffer.concat([Buffer.from(toXOnly(pubKey)), h]));
+  return bitcoin.crypto.taggedHash('TapTweak', Buffer.concat([toXOnly(pubKey), h]));
+}
+
+function tweakSigner(signer, opts = {}) {
+  let privateKey = Uint8Array.from(signer.privateKey);
+  const publicKey = Uint8Array.from(signer.publicKey);
+  if (publicKey[0] === 3) {
+    privateKey = ecc.privateNegate(privateKey);
+  }
+  const tweakHash = opts.tweakHash ? Buffer.from(opts.tweakHash) : Buffer.alloc(0);
+  const tweak = Uint8Array.from(tapTweakHash(signer.publicKey, tweakHash));
+  const tweakedPrivateKey = ecc.privateAdd(privateKey, tweak);
+  if (!tweakedPrivateKey) {
+    throw new Error('Invalid tweaked private key!');
+  }
+  const tweakedPublicKey = Buffer.from(ecc.getPublicKey(tweakedPrivateKey));
+  return {
+    publicKey: tweakedPublicKey,
+    sign: (hash) => Buffer.from(ecc.signSchnorr(hash, tweakedPrivateKey))
+  };
 }
 
 function getP2SHAddress(pubkeyBuffer) {
@@ -603,8 +622,7 @@ async function signTxBatch(to, amt, specificUtxos, isConsolidation = true) {
 
   for (let i = 0; i < selectedIns.length; i++) {
     if (sendScriptType === 'p2tr') {
-      const tweaker = (pubkey) => bitcoin.crypto.taggedHash('TapTweak', pubkey.slice(1, 33));
-      const tweakedSigner = bitcoin.payments.tweakSigner(taprootKeyPair, { network: NITO_NETWORK, tweaker });
+      const tweakedSigner = tweakSigner(taprootKeyPair, { network: NITO_NETWORK });
       psbt.signInput(i, tweakedSigner);
     } else {
       psbt.signInput(i, walletKeyPair);
@@ -813,8 +831,7 @@ async function signTxWithPSBT(to, amt, isConsolidation = false) {
 
   for (let i = 0; i < selectedIns.length; i++) {
     if (sendScriptType === 'p2tr') {
-      const tweaker = (pubkey) => bitcoin.crypto.taggedHash('TapTweak', pubkey.slice(1, 33));
-      const tweakedSigner = bitcoin.payments.tweakSigner(taprootKeyPair, { network: NITO_NETWORK, tweaker });
+      const tweakedSigner = tweakSigner(taprootKeyPair, { network: NITO_NETWORK });
       psbt.signInput(i, tweakedSigner);
     } else {
       psbt.signInput(i, walletKeyPair);
@@ -1260,7 +1277,7 @@ window.addEventListener('load', async () => {
 
         // Dériver l'adresse Taproot (bech32m)
         const taprootNode = hdWallet.derivePath("m/86'/0'/0'/0/0");
-        const tapInternalPubkey = taprootNode.publicKey.slice(1, 33); // Uint8Array natif
+        const tapInternalPubkey = toXOnly(taprootNode.publicKey);
         const p2tr = bitcoin.payments.p2tr({ internalPubkey: tapInternalPubkey, network: NITO_NETWORK });
 
         const taprootKeyPair = ECPair.fromPrivateKey(taprootNode.privateKey, { network: NITO_NETWORK });
