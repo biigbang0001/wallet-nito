@@ -1211,7 +1211,7 @@ window.addEventListener('load', async () => {
       updateLastActionTime();
       try {
         // Générer la phrase mnémonique et la clé HD
-        const mnemonic = generateHDMnemonic(12);
+        const mnemonic = generateHDMnemonic(24);
         const seed = bip39.mnemonicToSeedSync(mnemonic);
         const hdWallet = bip32.fromSeed(seed);
         const hdMasterKey = hdWallet.toBase58();
