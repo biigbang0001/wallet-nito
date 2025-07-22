@@ -358,8 +358,6 @@
   <div class="section">
     <h2 data-i18n="generate_section.title">🎯 Génération de clé privée Nito</h2>
     <button id="generateButton" data-i18n="generate_section.generate_button">🎲 Générer</button>
-    <p><span data-i18n="generate_section.private_key_hex">Clé privée (hex) :</span> <span id="privateKeyHex" class="blurred"></span> <button class="copy-btn" id="copyGenHex" data-i18n="generate_section.copy">📋</button> <button class="reveal-btn" id="revealHex" data-i18n="generate_section.reveal">👁️ Révéler</button></p>
-    <p><span data-i18n="generate_section.private_key_wif">WIF :</span> <span id="privateKey" class="blurred"></span> <button class="copy-btn" id="copyGenWif" data-i18n="generate_section.copy">📋</button> <button class="reveal-btn" id="revealWif" data-i18n="generate_section.reveal">👁️ Révéler</button></p>
     <p><span data-i18n="generate_section.hd_master_key">🔐 xprv HD :</span> <span id="hdMasterKey" class="blurred"></span> <button class="copy-btn" id="copyHdKey" data-i18n="generate_section.copy">📋</button> <button class="reveal-btn" id="revealHdKey" data-i18n="generate_section.reveal">👁️ Révéler</button></p>
     <p><span data-i18n="generate_section.mnemonic_phrase">🎯 mnémonique HD :</span> <span id="mnemonicPhrase" class="blurred"></span> <button class="copy-btn" id="copyMnemonic" data-i18n="generate_section.copy">📋</button> <button class="reveal-btn" id="revealMnemonic" data-i18n="generate_section.reveal">👁️ Révéler</button></p>
     <p><span id="generatedAddress"></span></p>
