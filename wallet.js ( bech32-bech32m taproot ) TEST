@@ -531,10 +531,10 @@ function tweakSigner(signer, opts = {}) {
   if (!tweakedPrivateKey) {
     throw new Error('Invalid tweaked private key!');
   }
-  const tweakedPublicKey = Buffer.from(ecc.getPublicKey(tweakedPrivateKey));
+  const tweakedPublicKey = Buffer.from(ecc.pointFromScalar(tweakedPrivateKey, true));
   return {
     publicKey: tweakedPublicKey,
-    sign: (hash) => Buffer.from(ecc.signSchnorr(hash, tweakedPrivateKey))
+    signSchnorr: (hash) => Buffer.from(ecc.signSchnorr(hash, tweakedPrivateKey, noble.utils.randomBytes(32)))
   };
 }
 
