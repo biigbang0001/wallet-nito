@@ -1191,9 +1191,7 @@ window.addEventListener('load', async () => {
       'themeToggle', 'languageSelect', 'generateButton', 'importWalletButton', 'refreshBalanceButton',
       'prepareTxButton', 'broadcastTxButton', 'cancelTxButton',
       'destinationAddress', 'amountNito', 'feeNito', 'debitAddressType', 'privateKeyWIF',
-      'walletAddress', 'walletBalance', 'txHexContainer', 'signedTx', 'copyGenHex',
-      'copyGenWif', 'copyTxHex', 'generatedAddress',
-      'privateKeyHex', 'privateKey', 'revealHex', 'revealWif', 'revealWifInput',
+      'walletAddress', 'walletBalance', 'txHexContainer', 'signedTx', 'copyTxHex', 'generatedAddress',
       'inactivityTimer',
       'keyCounter',
       'hdMasterKey', 'mnemonicPhrase', 'copyHdKey', 'copyMnemonic',
@@ -1251,8 +1249,6 @@ window.addEventListener('load', async () => {
 
     updateInactivityTimer();
 
-    $('copyGenHex').onclick = () => copyToClipboard('privateKeyHex');
-    $('copyGenWif').onclick = () => copyToClipboard('privateKey');
     $('copyTxHex').onclick = () => copyToClipboard('signedTx');
     $('copyHdKey').onclick = () => copyToClipboard('hdMasterKey');
     $('copyMnemonic').onclick = () => copyToClipboard('mnemonicPhrase');
@@ -1297,8 +1293,6 @@ window.addEventListener('load', async () => {
         }
 
         // Afficher seulement xprv et mnémonique (pas WIF/Hex)
-        $('privateKeyHex').textContent = '';
-        $('privateKey').textContent = '';
         $('hdMasterKey').textContent = hdMasterKey;
         $('mnemonicPhrase').textContent = mnemonic;
 
