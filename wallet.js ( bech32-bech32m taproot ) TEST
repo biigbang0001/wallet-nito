@@ -1447,16 +1447,16 @@ window.addEventListener('load', async () => {
         const bech32Balance = await balance(bech32Address);
         let taprootBalance = 0;
         let addressDisplay = `
-          Bech32: <span id="bech32Address">${bech32Address}</span> <button class="copy-btn" id="copyBech32Addr">📋</button> (Solde: ${bech32Balance.toFixed(8)} NITO)
+          Bech32: <span id="bech32Address">${bech32Address}</span> <button class="copy-btn" id="copyBech32Addr">📋</button> (${bech32Balance.toFixed(8)} )
         `;
 
         if (importType === 'hd') {
           taprootBalance = await balance(taprootAddress);
-          addressDisplay += `<br>Bech32m (Taproot): <span id="taprootAddress">${taprootAddress}</span> <button class="copy-btn" id="copyTaprootAddr">📋</button> (Solde: ${taprootBalance.toFixed(8)} NITO)`;
+          addressDisplay += `<br>Bech32m (Taproot): <span id="taprootAddress">${taprootAddress}</span> <button class="copy-btn" id="copyTaprootAddr">📋</button> (${taprootBalance.toFixed(8)} )`;
         }
 
         $('walletAddress').innerHTML = DOMPurify.sanitize(addressDisplay);
-        $('walletBalance').innerHTML = `Solde : Bech32: ${bech32Balance.toFixed(8)}` + (importType === 'hd' ? ` | Bech32m (Taproot): ${taprootBalance.toFixed(8)} NITO` : ' NITO');
+        $('walletBalance').innerHTML = `Bech32: ${bech32Balance.toFixed(8)}` + (importType === 'hd' ? ` | Bech32m (Taproot): ${taprootBalance.toFixed(8)} ` : ' NITO');
 
         const filteredAddresses = {
           legacy: addresses.legacy,
@@ -1603,11 +1603,11 @@ window.addEventListener('load', async () => {
       try {
         const bech32Balance = await balance(bech32Address);
         let taprootBalance = 0;
-        let balanceDisplay = `Solde : Bech32: ${bech32Balance.toFixed(8)} NITO`;
+        let balanceDisplay = `Bech32: ${bech32Balance.toFixed(8)} `;
 
         if (importType === 'hd') {
           taprootBalance = await balance(taprootAddress);
-          balanceDisplay = `Solde : Bech32: ${bech32Balance.toFixed(8)} | Bech32m (Taproot): ${taprootBalance.toFixed(8)} NITO`;
+          balanceDisplay = `Bech32: ${bech32Balance.toFixed(8)} | Bech32m (Taproot): ${taprootBalance.toFixed(8)} `;
         }
 
         if (!await validateAddress(bech32Address) || (importType === 'hd' && !await validateAddress(taprootAddress))) {
@@ -1615,11 +1615,11 @@ window.addEventListener('load', async () => {
         }
 
         let addressDisplay = `
-          Bech32: <span id="bech32Address">${bech32Address}</span> <button class="copy-btn" id="copyBech32Addr">📋</button> (Solde: ${bech32Balance.toFixed(8)} NITO)
+          Bech32: <span id="bech32Address">${bech32Address}</span> <button class="copy-btn" id="copyBech32Addr">📋</button> (${bech32Balance.toFixed(8)} )
         `;
 
         if (importType === 'hd') {
-          addressDisplay += `<br>Bech32m (Taproot): <span id="taprootAddress">${taprootAddress}</span> <button class="copy-btn" id="copyTaprootAddr">📋</button> (Solde: ${taprootBalance.toFixed(8)} NITO)`;
+          addressDisplay += `<br>Bech32m (Taproot): <span id="taprootAddress">${taprootAddress}</span> <button class="copy-btn" id="copyTaprootAddr">📋</button> (${taprootBalance.toFixed(8)} )`;
         }
 
         $('walletAddress').innerHTML = DOMPurify.sanitize(addressDisplay);
