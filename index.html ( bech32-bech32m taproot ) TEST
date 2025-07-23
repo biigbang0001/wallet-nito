@@ -5,7 +5,7 @@
   <!-- Balise viewport pour définir l'échelle initiale sur mobile -->
   <meta name="viewport" content="width=device-width, initial-scale=0.8, user-scalable=yes"/>
   <title>Wallet NITO</title>
-  <link rel="icon" href="https://raw.githubusercontent.com/biigbang0001/NitoNode-Explorer/refs/heads/main/favicon-192.png"/>
+  <link rel="icon" href="https://raw.githubusercontent.com/biigbang0001/wallet-nito/refs/heads/master/nito.png"/>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.1.6/purify.min.js"></script>
   <script src="https://unpkg.com/i18next@23.15.1/i18next.min.js"></script>
   <script src="https://unpkg.com/i18next-http-backend@2.6.1/i18nextHttpBackend.min.js"></script>
@@ -348,7 +348,7 @@
     </select>
   </div>
 
-  <h1><img src="https://raw.githubusercontent.com/biigbang0001/NitoNode-Explorer/refs/heads/main/favicon-192.png" alt="">Wallet NITO</h1>
+  <h1><img src="https://raw.githubusercontent.com/biigbang0001/wallet-nito/refs/heads/master/nito.png" alt="">Wallet NITO</h1>
 
   <!-- Encart pour le compteur -->
   <div class="counter-box">
