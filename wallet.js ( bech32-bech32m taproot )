@@ -88,11 +88,6 @@ let importType = '';
 const HD_SCAN_CHUNK = 50;           // derive 50 addresses per chunk per branch
 const HD_SCAN_MAX_CHUNKS = 40;      // up to 2000 addresses per branch (safe)
 
-/**
- * Derive a chunk of HD addresses for a given family ('bech32' BIP84 or 'taproot' BIP86),
- * both external (0) and internal/change (1) branches, from start index with count addresses.
- * Returns { descriptors, byScriptHex } where byScriptHex maps scriptPubKey hex -> { keyPair, scriptType, tapInternalKey? }.
- */
 function deriveHdChunk(family, start, count) {
   if (!hdWallet) throw new Error('HD wallet not initialized');
   const byScriptHex = {};
@@ -138,13 +133,9 @@ function deriveHdChunk(family, start, count) {
   return { descriptors, byScriptHex };
 }
 
-/**
- * Scan HD UTXOs for the given family using RPC scantxoutset in chunks.
- * Returns an array of utxos enriched with { keyPair, scriptType, tapInternalKey? }.
- */
 async function scanHdUtxosForFamily(family) {
   const allUtxos = [];
-  const seen = new Set(); // key "txid:vout" to avoid duplicates
+  const seen = new Set();
 
   for (let chunk = 0; chunk < HD_SCAN_MAX_CHUNKS; chunk++) {
     const start = chunk * HD_SCAN_CHUNK;
@@ -160,7 +151,6 @@ async function scanHdUtxosForFamily(family) {
     }
     const unspents = (scan && scan.unspents) ? scan.unspents : [];
     if (!unspents.length && chunk > 0) {
-      // stop when a further chunk yields no UTXOs at all
       break;
     }
 
@@ -565,7 +555,6 @@ function importHex(hex) {
 
 async function utxos(addr) {
   try {
-    // HD mode: gather UTXOs from all derived addresses of the same family (bech32 or taproot)
     if (importType === 'hd' && hdWallet) {
       const addrType = getAddressType(addr);
       if (addrType === 'p2wpkh') {
@@ -573,9 +562,7 @@ async function utxos(addr) {
       } else if (addrType === 'p2tr') {
         return await scanHdUtxosForFamily('taproot');
       }
-      // fallthrough: if not bech32/taproot just scan this single address
     }
-
     const scan = await rpc('scantxoutset', ['start', [`addr(${addr})`]]);
     if (!scan.success || !scan.unspents) return [];
     return scan.unspents.map(u => {
@@ -1596,6 +1583,8 @@ window.addEventListener('load', async () => {
         window.walletPublicKey = walletPublicKey;
         window.bech32Address = bech32Address;
         window.rpc = rpc;
+        window.balance = balance;
+        window.taprootAddress = taprootAddress;
         console.log("✅ Variables messagerie exposées:", bech32Address);
 
         $('privateKeyWIF').classList.add('blurred-input');
