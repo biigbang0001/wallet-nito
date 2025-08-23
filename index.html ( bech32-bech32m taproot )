@@ -329,7 +329,15 @@
       display: none !important;
     }
 
-  </style>
+  
+    /* --- Minimal tabs styling (non-invasive) --- */
+    .tabs{display:flex;gap:8px;margin:10px 0 16px 0;flex-wrap:wrap}
+    .tabs button{padding:8px 12px;border:1px solid #3a5163;background:#203040;color:#e0e0e0;border-radius:8px;cursor:pointer}
+    .tabs button.active{background:#2a4152}
+    .tab-pane{display:none}
+    /* ------------------------------------------ */
+    </style>
+    
 </head>
 <body>
   <div id="loadingSpinner"></div>
@@ -355,7 +363,15 @@
     <span data-i18n="counter.keys_generated">🔑 Clés Nito générées :</span> <span id="keyCounter">0</span>
   </div>
 
-  <div class="section">
+  
+  <nav class="tabs" id="mainTabs">
+  <button type="button" data-tab="tab-gen" class="active" data-i18n="generate_section.title">🎯 Génération de clé privée Nito</button>
+  <button type="button" data-tab="tab-send" data-i18n="send_section.title">📤 Envoyer NITO</button>
+  <button type="button" data-tab="tab-msg" data-i18n="encrypted_messaging.title">🔒 Messagerie cryptée</button>
+</nav>
+
+  <div class="tab-pane" id="tab-gen" style="display:block">
+    <div class="section">
     <h2 data-i18n="generate_section.title">🎯 Génération de clé privée Nito</h2>
     <button id="generateButton" data-i18n="generate_section.generate_button">🎲 Générer</button>
     <p><span data-i18n="generate_section.hd_master_key">🔐 xprv HD :</span> <span id="hdMasterKey" class="blurred"></span> <button class="copy-btn" id="copyHdKey" data-i18n="generate_section.copy">📋</button> <button class="reveal-btn" id="revealHdKey" data-i18n="generate_section.reveal">👁️ Révéler</button></p>
@@ -364,7 +380,8 @@
     <p class="warning" data-i18n="generate_section.warning"><span id="inactivityTimer">[10:00]</span> ⚠️ Sauvegardez la clé privée immédiatement ! Elle sera effacée après 10 minutes d'inactivité ou après un rechargement de la page.</p>
   </div>
 
-  <div class="section">
+  
+    <div class="section">
     <h2 data-i18n="import_section.title">📥 Importer un wallet</h2>
     <div>
       <textarea id="privateKeyWIF" placeholder="WIF/Hex/mnémonique HD/XPRV HD"
@@ -376,7 +393,11 @@
     <p><span data-i18n="import_section.balance">Solde :</span> <span id="walletBalance">0.00000000</span> NITO <button id="refreshBalanceButton" data-i18n="import_section.refresh_button">🔄</button></p>
   </div>
 
-  <div class="section">
+  
+  </div>
+
+  <div class="tab-pane" id="tab-send">
+    <div class="section">
     <h2 data-i18n="send_section.title">📤 Envoyer NITO</h2>
     <input id="destinationAddress" placeholder="Adresse destinataire" data-i18n="[placeholder]send_section.destination_placeholder"/>
     <input id="amountNito" type="number" step="0.00000001" placeholder="Montant (NITO)" data-i18n="[placeholder]send_section.amount_placeholder"/>
@@ -387,6 +408,12 @@
       <option value="bech32" selected data-i18n="send_section.bech32_option">Bech32</option>
       <option value="p2tr">Bech32m (Taproot)</option>
     </select>
+    <p>
+      <span data-i18n="import_section.balance">Solde :</span>
+      <span id="sendTabBalance">0.00000000</span> NITO
+      <button id="refreshSendTabBalance" class="copy-btn" type="button" data-i18n="import_section.refresh_button">🔄</button>
+    </p>
+
     <button id="prepareTxButton" data-i18n="send_section.prepare_button">📝 Préparer</button>
     <button id="broadcastTxButton" data-i18n="send_section.broadcast_button">✅ Diffuser transaction</button>
     <button id="cancelTxButton" data-i18n="send_section.cancel_button">❌ Annuler</button>
@@ -400,7 +427,11 @@
   </div>
 
   <!-- NOUVELLE SECTION MESSAGERIE -->
-  <div class="section">
+  
+  </div>
+
+  <div class="tab-pane" id="tab-msg">
+    <div class="section">
     <h2 data-i18n="encrypted_messaging.title">🔒 Messagerie cryptée</h2>
 
     <!-- Publication de clé publique -->
@@ -420,6 +451,8 @@
       <button id="sendMessageButton" data-i18n="encrypted_messaging.send_button">📤 Envoyer</button>
       <button id="clearMessageButton" data-i18n="encrypted_messaging.clear_button">🗑️ Effacer</button>
     </div>
+  </div>
+
 
     <!-- Formulaire d'envoi (masqué par défaut) -->
     <div id="sendMessageForm" class="send-form">
@@ -543,5 +576,79 @@
       text-decoration: underline !important;
     }
   </style>
+
+<script>
+(function(){
+  const tabs = document.querySelectorAll('#mainTabs button');
+  function showTab(id){
+    document.querySelectorAll('.tab-pane').forEach(p=>{
+      p.style.display = (p.id === id) ? 'block' : 'none';
+    });
+    tabs.forEach(b=>b.classList.toggle('active', b.dataset.tab === id));
+    // Scroll to top of content for better UX
+    window.scrollTo({top: 0, behavior: 'smooth'});
+  }
+  tabs.forEach(btn => btn.addEventListener('click', () => {
+    const target = btn.dataset.tab;
+    const needsImport = (target === 'tab-send' || target === 'tab-msg');
+    const isImported = !!(window.walletKeyPair);
+    if (needsImport && !isImported) {
+      if (window.i18next && i18next.t) {
+        alert(i18next.t('errors.import_first'));
+      } else {
+        alert('Veuillez importer un wallet d\'abord.');
+      }
+      showTab('tab-gen');
+      return;
+    }
+    showTab(target);
+  }));
+  // Expose helper to programmatically enable tabs after import if needed
+  window.__nitoShowTab = showTab;
+})();
+</script>
+
+
+<script>
+(function(){
+  async function updateSendTabBalance(){
+    try {
+      const sel = document.getElementById('debitAddressType');
+      const out = document.getElementById('sendTabBalance');
+      if (!sel || !out) return;
+      const val = sel.value;
+      const addr = (val === 'p2tr') ? (window.taprootAddress || '') : (window.bech32Address || '');
+      if (!addr) { out.textContent = '0.00000000'; return; }
+      const amt = await window.balance(addr);
+      out.textContent = (amt || 0).toFixed(8);
+    } catch(e){
+      console.error('updateSendTabBalance error:', e);
+    }
+  }
+  window.updateSendTabBalance = updateSendTabBalance;
+
+  // Hook on select change
+  document.addEventListener('change', (ev) => {
+    if (ev.target && ev.target.id === 'debitAddressType') {
+      updateSendTabBalance();
+    }
+  });
+  // Hook on refresh click
+  document.addEventListener('click', (ev) => {
+    if (ev.target && ev.target.id === 'refreshSendTabBalance') {
+      updateSendTabBalance();
+    }
+  });
+
+  // Also update when Send tab is shown (integrate with tab nav if present)
+  const sendTabButton = document.querySelector('#mainTabs button[data-tab="tab-send"]');
+  if (sendTabButton) {
+    sendTabButton.addEventListener('click', () => setTimeout(updateSendTabBalance, 0));
+  }
+  // Initial attempt (in case we land on send tab directly)
+  setTimeout(updateSendTabBalance, 300);
+})();
+</script>
+
 </body>
 </html>
