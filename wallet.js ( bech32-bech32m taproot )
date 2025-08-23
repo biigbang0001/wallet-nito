@@ -12,7 +12,7 @@ window.Buffer = Buffer;
 
 const bip32 = bip32Factory(ecc);
 
-// Wrapper pour ecc afin de forcer Buffer sur les retours (fix TypeError: Argument must be a Buffer)
+
 const wrappedEcc = {
   ...ecc,
   pointFromScalar: (d, compressed) => {
@@ -41,7 +41,6 @@ const wrappedEcc = {
 };
 bitcoin.initEccLib(wrappedEcc);
 
-// === Extension HD ===
 let hdWallet = null;
 let currentMnemonic = null;
 
@@ -59,6 +58,9 @@ const NITO_NETWORK = {
 const NODE_URL = '/api/';
 let MIN_FEE_RATE = 0.00001;
 let DYNAMIC_FEE_RATE = null;
+let MEMPOOL_MIN_FEE = null;
+let RELAY_FEE = null;
+
 const DUST_RELAY_AMOUNT = 3000;
 const DUST_AMOUNT = {
   p2pkh: 546,
@@ -84,9 +86,182 @@ let inactivityTimeout = null;
 let timerInterval = null;
 let importType = '';
 
-// === HD scanning helpers (minimal, non-invasive) ===
-const HD_SCAN_CHUNK = 50;           // derive 50 addresses per chunk per branch
-const HD_SCAN_MAX_CHUNKS = 40;      // up to 2000 addresses per branch (safe)
+
+
+const HD_START_RANGE = 512;
+const HD_MAX_RANGE = 50000;
+const HD_RANGE_SAFETY = 16;
+
+function getHdAccountNode(family) {
+  if (!hdWallet) throw new Error('HD wallet not initialized');
+  if (family === 'bech32') return hdWallet.derivePath("m/84'/0'/0'");
+  if (family === 'taproot') return hdWallet.derivePath("m/86'/0'/0'");
+  throw new Error('Unknown family for HD');
+}
+
+function familyToDescriptorPrefix(family) {
+  if (family === 'bech32') return 'wpkh';
+  if (family === 'taproot') return 'tr';
+  throw new Error('Unknown family');
+}
+
+function xpubForFamily(family) {
+  const acct = getHdAccountNode(family).neutered();
+  return acct.toBase58();
+}
+
+function makeFamilyDescriptor(family, branch) {
+  const xpub = xpubForFamily(family);
+  const prefix = familyToDescriptorPrefix(family);
+
+  return `${prefix}(${xpub}/${branch}/*)`;
+}
+
+function parseDescBranchIndex(desc) {
+  try {
+
+    const m = desc.match(/\/(0|1)\/(\d+)\)?/);
+    if (!m) return null;
+    return { branch: parseInt(m[1], 10), index: parseInt(m[2], 10) };
+  } catch (_) { return null; }
+}
+
+function deriveKeyFor(family, branch, index) {
+  const account = getHdAccountNode(family);
+  const node = account.derive(branch).derive(index);
+  const keyPair = ECPair.fromPrivateKey(node.privateKey, { network: NITO_NETWORK });
+  const res = { keyPair };
+  if (family === 'taproot') {
+    res.tapInternalKey = toXOnly(node.publicKey);
+  }
+  return res;
+}
+
+function prederiveMapForRange(family, branch, start, count) {
+  const byScriptHex = {};
+  const network = NITO_NETWORK;
+  const account = getHdAccountNode(family);
+  const branchNode = account.derive(branch);
+  for (let i = start; i < start + count; i++) {
+    const node = branchNode.derive(i);
+    const keyPair = ECPair.fromPrivateKey(node.privateKey, { network });
+    const pub = Buffer.from(node.publicKey);
+    if (family === 'bech32') {
+      const pay = bitcoin.payments.p2wpkh({ pubkey: pub, network });
+      if (!pay.output) continue;
+      byScriptHex[pay.output.toString('hex').toLowerCase()] = { keyPair, scriptType: 'p2wpkh' };
+    } else {
+      const internal = toXOnly(pub);
+      const pay = bitcoin.payments.p2tr({ internalPubkey: internal, network });
+      if (!pay.output) continue;
+      byScriptHex[pay.output.toString('hex').toLowerCase()] = { keyPair, tapInternalKey: internal, scriptType: 'p2tr' };
+    }
+  }
+  return byScriptHex;
+}
+
+async function scanBranch(family, branch, startRange=HD_START_RANGE) {
+  const descriptor = makeFamilyDescriptor(family, branch);
+  let current = startRange;
+  let all = [];
+  let seen = new Set();
+  let maxIndex = -1;
+
+  while (true) {
+    let scan;
+    try {
+      scan = await rpc('scantxoutset', ['start', [{ desc: descriptor, range: current }]]);
+    } catch (e) {
+      console.error('scantxoutset failed for descriptor', descriptor, e);
+
+      break;
+    }
+    const unspents = (scan && scan.unspents) ? scan.unspents : [];
+    if (!unspents.length && current > startRange) {
+      break;
+    }
+
+
+    let map = null;
+
+    for (const u of unspents) {
+      const key = `${u.txid}:${u.vout}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+
+      let branchIdx = branch;
+      let index = null;
+      if (u.desc) {
+        const parsed = parseDescBranchIndex(u.desc);
+        if (parsed) {
+          branchIdx = parsed.branch;
+          index = parsed.index;
+        }
+      }
+      let enriched = {
+        txid: u.txid,
+        vout: u.vout,
+        amount: u.amount,
+        scriptPubKey: u.scriptPubKey,
+        scriptType: detectScriptType(u.scriptPubKey)
+      };
+
+
+      if (index !== null) {
+        const keyInfo = deriveKeyFor(family, branchIdx, index);
+        enriched.keyPair = keyInfo.keyPair;
+        if (keyInfo.tapInternalKey) enriched.tapInternalKey = keyInfo.tapInternalKey;
+      } else {
+        if (!map) map = prederiveMapForRange(family, branch, 0, current);
+        const info = map[(u.scriptPubKey || '').toLowerCase()];
+        if (info) {
+          enriched.keyPair = info.keyPair;
+          if (info.tapInternalKey) enriched.tapInternalKey = info.tapInternalKey;
+        }
+      }
+      if (index !== null) {
+        if (index > maxIndex) maxIndex = index;
+      }
+      all.push(enriched);
+    }
+
+
+    if (maxIndex >= current - HD_RANGE_SAFETY && current < HD_MAX_RANGE) {
+      current = Math.min(current * 2, HD_MAX_RANGE);
+      continue;
+    }
+    break;
+  }
+
+  return { utxos: all, maxIndex };
+}
+
+
+async function scanHdUtxosForFamilyDescriptor(family) {
+  try {
+    const res0 = await scanBranch(family, 0, HD_START_RANGE);
+    const res1 = await scanBranch(family, 1, HD_START_RANGE);
+    const seen = new Set();
+    const all = [];
+    for (const u of [...res0.utxos, ...res1.utxos]) {
+      const k = `${u.txid}:${u.vout}`;
+      if (seen.has(k)) continue;
+      seen.add(k);
+      all.push(u);
+    }
+    return all;
+  } catch (e) {
+    console.warn('Descriptor scan failed, falling back to legacy HD scan:', e?.message || e);
+    if (typeof scanHdUtxosForFamily === 'function') {
+      return await scanHdUtxosForFamily(family);
+    }
+    throw e;
+  }
+}
+
+
+const HD_SCAN_CHUNK = 50;
+const HD_SCAN_MAX_CHUNKS = 40;
 
 function deriveHdChunk(family, start, count) {
   if (!hdWallet) throw new Error('HD wallet not initialized');
@@ -180,9 +355,9 @@ async function scanHdUtxosForFamily(family) {
 
   return allUtxos;
 }
-; // 'single' for WIF/Hex, 'hd' for xprv/mnemonic
+;
 
-// Initialiser i18next avec l'objet global window.i18next
+
 i18next
   .use(window.i18nextHttpBackend)
   .init({
@@ -200,7 +375,7 @@ i18next
   });
 
 function updateTranslations() {
-  // Traduire les éléments avec l'attribut data-i18n
+
   document.querySelectorAll('[data-i18n]').forEach(element => {
     const key = element.getAttribute('data-i18n');
     if (key.startsWith('[placeholder]')) {
@@ -211,19 +386,19 @@ function updateTranslations() {
     }
   });
 
-  // Traduire spécifiquement le titre <h1> (contient une image)
+
   const h1 = document.querySelector('h1');
   if (h1 && h1.childNodes[1]) {
     h1.childNodes[1].textContent = i18next.t('title');
   }
 
-  // Traduire le contenu de l'élément warning avec HTML
+
   const warning = document.querySelector('.warning');
   if (warning) {
     warning.innerHTML = DOMPurify.sanitize(i18next.t('generate_section.warning'));
   }
 
-  // Traduire le bouton de consolidation s'il existe
+
   const consolidateButton = document.getElementById('consolidateButton');
   if (consolidateButton) {
     consolidateButton.textContent = i18next.t('send_section.consolidate_button');
@@ -242,7 +417,7 @@ async function rpc(method, params) {
           body: JSON.stringify({ jsonrpc: '2.0', method, params, id: Date.now() })
         });
         const text = await res.text();
-        console.log('RPC raw response:', text);
+        if (method !== 'getnetworkinfo' && method !== 'estimatesmartfee') console.log('RPC raw response:', text);
         if (!res.ok) throw new Error(`HTTP Error: ${res.status} - ${text}`);
         const data = JSON.parse(text);
         if (data.error) throw new Error(data.error.message);
@@ -266,7 +441,7 @@ async function rpc(method, params) {
         body: JSON.stringify({ jsonrpc: '2.0', method, params, id: Date.now() })
       });
       const text = await res.text();
-      console.log('RPC raw response:', text);
+        if (method !== 'getnetworkinfo' && method !== 'estimatesmartfee') console.log('RPC raw response:', text);
       if (!res.ok) throw new Error(`HTTP Error: ${res.status} - ${text}`);
       const data = JSON.parse(text);
       if (data.error) throw new Error(data.error.message);
@@ -278,7 +453,7 @@ async function rpc(method, params) {
   }
 }
 
-// Fonction pour récupérer la valeur du compteur
+
 async function fetchCounter() {
   try {
     const res = await fetch('/api/get-counter', { method: 'GET' });
@@ -287,11 +462,11 @@ async function fetchCounter() {
     return data.count;
   } catch (e) {
     console.error('Error fetching counter:', e);
-    return 0; // Valeur par défaut en cas d'erreur
+    return 0;
   }
 }
 
-// Fonction pour incrémenter le compteur
+
 async function incrementCounter() {
   try {
     const res = await fetch('/api/increment-counter', {
@@ -308,7 +483,7 @@ async function incrementCounter() {
   }
 }
 
-// Mettre à jour l'affichage du compteur
+
 async function updateCounterDisplay() {
   const counterElement = document.getElementById('keyCounter');
   if (counterElement) {
@@ -317,10 +492,10 @@ async function updateCounterDisplay() {
   }
 }
 
-// NOUVELLE FONCTION: Filtrer les UTXOs avec OP_RETURN
+
 async function filterOpReturnUtxos(utxos) {
-  // Filtrage simple par montant minimum pour éviter les UTXOs de messaging
-  const filteredUtxos = utxos.filter(utxo => utxo.amount >= 0.000003);
+
+  const filteredUtxos = utxos.filter(utxo => utxo.amount >= 0.00005);
   console.log(`UTXOs filtrés: ${filteredUtxos.length}/${utxos.length} (minimum 0.000003 NITO)`);
   return filteredUtxos;
 }
@@ -374,7 +549,7 @@ async function showSuccessPopup(txid) {
 
 window.showSuccessPopup = showSuccessPopup;
 
-// Fonctions pour le spinner de chargement
+
 function showLoadingSpinner() {
   const spinner = document.getElementById('loadingSpinner');
   if (spinner) spinner.style.display = 'block';
@@ -385,19 +560,32 @@ function hideLoadingSpinner() {
   if (spinner) spinner.style.display = 'none';
 }
 
+
 async function initNetworkParams() {
   try {
     const feeInfo = await rpc('estimatesmartfee', [6]);
-    const rawFeeRate = feeInfo.feerate || MIN_FEE_RATE;
-    DYNAMIC_FEE_RATE = Math.max(rawFeeRate * 1.2, MIN_FEE_RATE);
-    window.DYNAMIC_FEE_RATE = DYNAMIC_FEE_RATE;
-    console.log('Dynamic fee rate:', DYNAMIC_FEE_RATE);
+    const rawFeeRate = (feeInfo && typeof feeInfo.feerate === 'number') ? feeInfo.feerate : MIN_FEE_RATE;
+    DYNAMIC_FEE_RATE = Math.max(rawFeeRate, MIN_FEE_RATE);
+
+    try {
+      const mem = await rpc('getmempoolinfo', []);
+      if (mem && typeof mem.mempoolminfee === 'number') MEMPOOL_MIN_FEE = mem.mempoolminfee;
+    } catch (e) {
+      console.warn('getmempoolinfo failed:', e?.message || e);
+    }
+    try {
+      const net = await rpc('getnetworkinfo', []);
+      if (net && typeof net.relayfee === 'number') RELAY_FEE = net.relayfee;
+    } catch (e) {
+      console.warn('getnetworkinfo failed:', e?.message || e);
+    }
+
+    console.log('Fee params', { DYNAMIC_FEE_RATE, MEMPOOL_MIN_FEE, RELAY_FEE });
   } catch (e) {
-    DYNAMIC_FEE_RATE = MIN_FEE_RATE;
-    window.DYNAMIC_FEE_RATE = DYNAMIC_FEE_RATE;
-    console.error('Error fetching fees:', e);
+    console.error('initNetworkParams failed:', e);
   }
 }
+
 
 function genAddr(type) {
   try {
@@ -457,11 +645,11 @@ function importHDWallet(seedOrXprv, passphrase = '') {
     let seed;
 
     if (seedOrXprv.startsWith('xprv')) {
-      // Clé maître directe
+
       hdWallet = bip32.fromBase58(seedOrXprv);
       currentMnemonic = null;
     } else {
-      // Phrase mnémonique
+
       const mnemonic = seedOrXprv.trim();
       if (!bip39.validateMnemonic(mnemonic)) {
          throw new Error(i18next.t('errors.invalid_mnemonic'));
@@ -472,7 +660,7 @@ function importHDWallet(seedOrXprv, passphrase = '') {
       currentMnemonic = mnemonic;
     }
 
-    // Générer la première adresse bech32 (comme votre logique actuelle)
+
     const bech32Node = hdWallet.derivePath("m/84'/0'/0'/0/0");
     const pubkey = Buffer.from(bech32Node.publicKey);
     const keyPair = ECPair.fromPrivateKey(bech32Node.privateKey, { network: NITO_NETWORK });
@@ -481,12 +669,12 @@ function importHDWallet(seedOrXprv, passphrase = '') {
     const p2wpkh = bitcoin.payments.p2wpkh({ pubkey: pubkey, network: NITO_NETWORK });
     const p2sh = bitcoin.payments.p2sh({ redeem: p2wpkh, network: NITO_NETWORK });
 
-    // Ajout Taproot (P2TR)
+
     const taprootNode = hdWallet.derivePath("m/86'/0'/0'/0/0");
     const tapInternalPubkey = toXOnly(taprootNode.publicKey);
     const p2tr = bitcoin.payments.p2tr({ internalPubkey: tapInternalPubkey, network: NITO_NETWORK });
 
-    // Utilise ECPair pour compatibilité avec tweakSigner
+
     const taprootKeyPair = ECPair.fromPrivateKey(taprootNode.privateKey, { network: NITO_NETWORK });
 
     return {
@@ -558,9 +746,9 @@ async function utxos(addr) {
     if (importType === 'hd' && hdWallet) {
       const addrType = getAddressType(addr);
       if (addrType === 'p2wpkh') {
-        return await scanHdUtxosForFamily('bech32');
+        return await scanHdUtxosForFamilyDescriptor('bech32');
       } else if (addrType === 'p2tr') {
-        return await scanHdUtxosForFamily('taproot');
+        return await scanHdUtxosForFamilyDescriptor('taproot');
       }
     }
     const scan = await rpc('scantxoutset', ['start', [`addr(${addr})`]]);
@@ -644,6 +832,41 @@ function getDustThreshold(scriptType) {
   return DUST_AMOUNT[scriptType] || DUST_AMOUNT.p2sh;
 }
 
+
+function _inputVBytes(type) {
+  const inputSizes = { p2pkh: 148, p2wpkh: 68, p2sh: 91, p2tr: 57.5 };
+  return inputSizes[type] || inputSizes.p2wpkh;
+}
+function _outputVBytes(type) {
+  const outputSizes = { p2pkh: 34, p2wpkh: 31, p2sh: 32, p2tr: 43 };
+  return outputSizes[type] || outputSizes.p2wpkh;
+}
+function estimateVBytes(inputType, numInputs, outputTypesArray) {
+  const overhead = 10;
+  const inSize = _inputVBytes(inputType) * numInputs;
+  const outSize = (outputTypesArray || []).reduce((s, t) => s + _outputVBytes(t), 0);
+  return overhead + inSize + outSize;
+}
+/**
+ * Estimate fee with possible change output, iterating once:
+ * - assume change exists -> compute fee -> compute change
+ * - if change < dust for changeType, recompute as single-output (no change)
+ * Returns { vbytes, fee, outputs: ['dest'] or ['dest','change'], changeSats }
+ */
+function estimateFeeWithChange(totalSats, targetSats, inputType, numInputs, destType, changeType) {
+  const dustChange = getDustThreshold((changeType === 'p2tr') ? 'p2tr' : 'p2wpkh');
+
+  const withChangeVBytes = estimateVBytes(inputType, numInputs, [destType, changeType || 'p2wpkh']);
+  const withChangeFee = feeForVsize(withChangeVBytes);
+  const change = totalSats - targetSats - withChangeFee;
+  if (change >= dustChange) {
+    return { vbytes: withChangeVBytes, fee: withChangeFee, outputs: [destType, changeType || 'p2wpkh'], changeSats: change };
+  }
+
+  const noChangeVBytes = estimateVBytes(inputType, numInputs, [destType]);
+  const noChangeFee = feeForVsize(noChangeVBytes);
+  return { vbytes: noChangeVBytes, fee: noChangeFee, outputs: [destType], changeSats: 0 };
+}
 function estimateTxSize(scriptType, numInputs, numOutputs, destScriptType) {
   const inputSizes = { p2pkh: 148, p2wpkh: 68, p2sh: 91, p2tr: 57.5 };
   const outputSizes = { p2pkh: 34, p2wpkh: 31, p2sh: 32, p2tr: 43 };
@@ -652,6 +875,21 @@ function estimateTxSize(scriptType, numInputs, numOutputs, destScriptType) {
   const outputSize = outputSizes[destScriptType] || outputSizes.p2wpkh;
   return overhead + inputSize * numInputs + outputSize * numOutputs;
 }
+
+function effectiveFeeRate() {
+  const dyn = (typeof DYNAMIC_FEE_RATE === 'number' && !isNaN(DYNAMIC_FEE_RATE)) ? DYNAMIC_FEE_RATE : 0;
+  const mem = (typeof MEMPOOL_MIN_FEE === 'number' && !isNaN(MEMPOOL_MIN_FEE)) ? MEMPOOL_MIN_FEE : 0;
+  const rel = (typeof RELAY_FEE === 'number' && !isNaN(RELAY_FEE)) ? RELAY_FEE : 0;
+  return Math.max(dyn, mem, rel, MIN_FEE_RATE);
+}
+
+function feeForVsize(vbytes) {
+
+  const rate = effectiveFeeRate();
+  return Math.ceil((vbytes) * (rate * 1.2 * 1e8) / 1000);
+}
+try { window.feeForVsize = feeForVsize; window.effectiveFeeRate = effectiveFeeRate; } catch(_) {}
+
 
 function toXOnly(pubkey) {
   return Buffer.from(pubkey.slice(1, 33));
@@ -698,7 +936,7 @@ async function transferToP2SH(amt) {
   return await signTxWithPSBT(p2shAddress, amt);
 }
 
-// Fonction spécialisée pour la consolidation par lots
+
 async function signTxBatch(to, amt, specificUtxos, isConsolidation = true) {
   updateLastActionTime();
   if (!walletAddress || !walletKeyPair || !walletPublicKey) throw Error(i18next.t('errors.import_first'));
@@ -714,19 +952,17 @@ async function signTxBatch(to, amt, specificUtxos, isConsolidation = true) {
   const target = Math.round(amt * 1e8);
   let total = 0;
 
-  // Utiliser les UTXOs spécifiques fournis
+
   const selectedIns = specificUtxos;
   for (const u of selectedIns) {
     total += Math.round(u.amount * 1e8);
   }
 
-  // Calcul des frais basé sur les UTXOs réellement utilisés
-  const feeRate = DYNAMIC_FEE_RATE || MIN_FEE_RATE;
-  const fees = Math.max(
-    Math.round((selectedIns.length * (sendScriptType === 'p2tr' ? 57.5 : 68) + 50) * (feeRate * 1.2 * 1e8) / 1000),
-    Math.round(MIN_CONSOLIDATION_FEE * 1e8)
-  );
 
+
+
+
+  const fees = feeForVsize(estimateVBytes(sendScriptType, selectedIns.length, [destScriptType]));
   console.log('Batch - Selected UTXOs:', selectedIns.length, 'Total:', total / 1e8, 'Target:', target / 1e8, 'Fees:', fees / 1e8);
 
   const change = total - target - fees;
@@ -794,7 +1030,6 @@ async function signTx(to, amt, isConsolidation = false) {
   const ins = await utxos(walletAddress);
   if (!ins.length) throw new Error(i18next.t('errors.no_utxo'));
 
-  // MODIFICATION: Filtrer les UTXOs avec OP_RETURN pour les transactions normales
   const workingIns = isConsolidation ? ins : await filterOpReturnUtxos(ins);
   if (!workingIns.length) throw new Error(i18next.t('errors.utxo_opreturn_consolidate'));
 
@@ -809,28 +1044,25 @@ async function signTx(to, amt, isConsolidation = false) {
   let total = 0;
   const selectedIns = [];
 
-  // MODIFICATION: Sélection intelligente des UTXOs
   for (const u of workingIns) {
     selectedIns.push(u);
     total += Math.round(u.amount * 1e8);
 
-    // Pour les transactions normales, arrêter dès qu'on a assez
+
     if (!isConsolidation) {
-      const estimatedSize = estimateTxSize(sendScriptType, selectedIns.length, 2, destScriptType);
-      const feeRate = DYNAMIC_FEE_RATE || MIN_FEE_RATE;
-      const estimatedFees = Math.max(Math.round(estimatedSize * (feeRate * 1e8) / 1000), Math.round(MIN_CONSOLIDATION_FEE * 1e8));
+      const _feeEst = estimateFeeWithChange(total, target, sendScriptType, selectedIns.length, destScriptType, 'p2wpkh'); const estimatedSize = _feeEst.vbytes; const estimatedFees = _feeEst.fee;
 
       if (total >= target + estimatedFees + getDustThreshold('p2wpkh')) {
         break;
       }
     }
 
-    // Pour consolidation, utiliser tous les UTXOs
+
   }
 
-  const txSize = estimateTxSize(sendScriptType, selectedIns.length, 1, destScriptType);
-  const feeRate = DYNAMIC_FEE_RATE || MIN_FEE_RATE;
-  const inputFee = Math.max(Math.round((selectedIns.length * 68 + 50) * (feeRate * 1.2 * 1e8) / 1000), Math.round(MIN_CONSOLIDATION_FEE * 1e8));
+  const _feeEst = estimateFeeWithChange(total, target, sendScriptType, selectedIns.length, destScriptType, 'p2wpkh'); const txSize = _feeEst.vbytes; const inputFee = _feeEst.fee;
+
+
 
   console.log('Estimated size:', txSize, 'vbytes, Fee:', inputFee / 1e8, 'NITO, Selected UTXOs:', selectedIns.length);
 
@@ -883,7 +1115,6 @@ async function signTxWithPSBT(to, amt, isConsolidation = false) {
   const ins = await utxos(walletAddress);
   if (!ins.length) throw new Error(i18next.t('errors.no_utxo'));
 
-  // MODIFICATION: Filtrer les UTXOs avec OP_RETURN pour les transactions normales
   const workingIns = isConsolidation ? ins : await filterOpReturnUtxos(ins);
   if (!workingIns.length) throw new Error('Aucun UTXO disponible (tous contiennent des OP_RETURN, veuillez consolider les UTXOs)');
 
@@ -896,28 +1127,25 @@ async function signTxWithPSBT(to, amt, isConsolidation = false) {
   let total = 0;
   const selectedIns = [];
 
-  // MODIFICATION: Sélection intelligente des UTXOs
   for (const u of workingIns) {
     selectedIns.push(u);
     total += Math.round(u.amount * 1e8);
 
-    // Pour les transactions normales, arrêter dès qu'on a assez
+
     if (!isConsolidation) {
-      const estimatedSize = estimateTxSize(sendScriptType, selectedIns.length, 2, destScriptType);
-      const feeRate = DYNAMIC_FEE_RATE || MIN_FEE_RATE;
-      const estimatedFees = Math.max(Math.round(estimatedSize * (feeRate * 1e8) / 1000), Math.round(MIN_CONSOLIDATION_FEE * 1e8));
+      const _feeEst = estimateFeeWithChange(total, target, sendScriptType, selectedIns.length, destScriptType, 'p2wpkh'); const estimatedSize = _feeEst.vbytes; const estimatedFees = _feeEst.fee;
 
       if (total >= target + estimatedFees + getDustThreshold(sendScriptType === 'p2tr' ? 'p2tr' : 'p2wpkh')) {
         break;
       }
     }
 
-    // Pour consolidation, utiliser tous les UTXOs
+
   }
 
-  const txSize = estimateTxSize(sendScriptType, selectedIns.length, 1, destScriptType);
-  const feeRate = DYNAMIC_FEE_RATE || MIN_FEE_RATE;
-  const inputFee = Math.max(Math.round((selectedIns.length * (sendScriptType === 'p2tr' ? 57.5 : 68) + 50) * (feeRate * 1e8) / 1000), Math.round(MIN_CONSOLIDATION_FEE * 1e8));
+  const _feeEst = estimateFeeWithChange(total, target, sendScriptType, selectedIns.length, destScriptType, 'p2wpkh'); const txSize = _feeEst.vbytes; const inputFee = _feeEst.fee;
+
+
 
   console.log('Estimated size:', txSize, 'vbytes, Fee:', inputFee / 1e8, 'NITO, Selected UTXOs:', selectedIns.length);
 
@@ -1057,7 +1285,7 @@ async function consolidateUtxos() {
 
     showLoadingSpinner();
 
-    // Récupérer tous les UTXOs initiaux
+
     const initialUtxos = await utxos(sourceAddress);
     if (initialUtxos.length < 2) {
       hideLoadingSpinner();
@@ -1068,14 +1296,14 @@ async function consolidateUtxos() {
 
     console.log('Initial UTXOs to consolidate:', initialUtxos.length);
 
-    // Calculer le nombre d'étapes nécessaires
+
     const utxosPerBatch = 500;
     const estimatedSteps = Math.ceil(initialUtxos.length / utxosPerBatch);
     const maxSteps = Math.min(estimatedSteps, 100);
 
     console.log(`Consolidation estimée: ${estimatedSteps} étapes pour ${initialUtxos.length} UTXOs`);
 
-    // Demander confirmation
+
     const confirm = await new Promise(resolve => {
       hideLoadingSpinner();
       const popup = document.createElement('div');
@@ -1132,28 +1360,28 @@ async function consolidateUtxos() {
     const MAX_IDENTICAL_SCANS = 3;
 
     try {
-      // Boucle pour traiter TOUS les UTXOs
+
       while (currentUtxos.length > 1 && stepCount <= maxSteps) {
         console.log(`${stepCount}/${maxSteps} (${Math.round((stepCount/maxSteps)*100)}%) - UTXOs restants: ${currentUtxos.length}`);
 
-        // Si on a exactement 1 UTXO, on a terminé
+
         if (currentUtxos.length === 1) {
           console.log("🎯 CONSOLIDATION TERMINÉE : 1 seul UTXO restant");
           break;
         }
 
-        // Si on a 2 UTXOs depuis plusieurs scans → Terminer
+
         if (currentUtxos.length === 2 && consecutiveIdenticalScans >= MAX_IDENTICAL_SCANS) {
           console.log(`🎯 CONSOLIDATION RÉUSSI : 2 UTXOs restants après ${consecutiveIdenticalScans} scans identiques`);
           break;
         }
 
-        // Prendre TOUS les UTXOs restants
+
         const batchUtxos = currentUtxos.slice(0, 500);
 
         currentUtxos = currentUtxos.slice(500);
 
-        // Calculer le montant total
+
         let batchTotal = 0;
         for (const u of batchUtxos) {
           batchTotal += Math.round(u.amount * 1e8);
@@ -1166,11 +1394,12 @@ async function consolidateUtxos() {
           break;
         }
 
-        // Calculer le montant après déduction des frais
-        const feeRate = DYNAMIC_FEE_RATE || MIN_FEE_RATE;
+
+
         const inputSize = (sourceType === 'p2tr') ? 57.5 : 68;
-        let estimatedFees = Math.round((batchUtxos.length * inputSize + 50) * (feeRate * 1.2 * 1e8) / 1000);
-        estimatedFees = Math.max(estimatedFees, Math.round(MIN_CONSOLIDATION_FEE * 1e8));
+        const destScriptType = getAddressType(sourceAddress);
+        let estimatedFees = feeForVsize(estimateVBytes(sourceType, batchUtxos.length, [destScriptType]));
+
 
         const amountToSend = (batchTotal - estimatedFees) / 1e8;
 
@@ -1185,13 +1414,13 @@ async function consolidateUtxos() {
           totalSuccess++;
           lastTxid = txid;
 
-          // Attendre la confirmation
+
           console.log('⏳ Attente confirmation (5 secondes)...');
           await new Promise(resolve => setTimeout(resolve, 5000));
 
           console.log(`📊 UTXOs restants à traiter: ${currentUtxos.length}`);
 
-          // Si on a réussi à tout consolider, on sort
+
           if (currentUtxos.length <= 1) {
             console.log("🎯 CONSOLIDATION COMPLÈTE !");
             break;
@@ -1295,7 +1524,7 @@ function updateInactivityTimer() {
     }
     const now = Date.now();
     const elapsed = now - lastActionTime;
-    const remaining = Math.max(0, 600000 - elapsed); // 600000ms = 10min
+    const remaining = Math.max(0, 600000 - elapsed);
     const minutes = Math.floor(remaining / 60000);
     const seconds = Math.floor((remaining % 60000) / 1000);
     timerElement.textContent = `[${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}]`;
@@ -1309,12 +1538,12 @@ function updateInactivityTimer() {
 function updateLastActionTime() {
   lastActionTime = Date.now();
   if (inactivityTimeout) clearTimeout(inactivityTimeout);
-  inactivityTimeout = setTimeout(clearSensitiveData, 600000); // 10min
+  inactivityTimeout = setTimeout(clearSensitiveData, 600000);
   updateInactivityTimer();
 }
 
 function clearSensitiveData() {
-  // ✅ EFFACER SEULEMENT LES DONNÉES GÉNÉRÉES (section génération)
+
   const privateKeyHex = document.getElementById('privateKeyHex');
   const privateKey = document.getElementById('privateKey');
   const hdMasterKey = document.getElementById('hdMasterKey');
@@ -1327,8 +1556,8 @@ function clearSensitiveData() {
   if (mnemonicPhrase) mnemonicPhrase.textContent = '';
   if (generatedAddress) generatedAddress.innerHTML = '';
 
-  // ❌ NE PAS EFFACER LES DONNÉES IMPORTÉES
-  // walletKeyPair, walletPublicKey, bech32Address restent intacts
+
+
 
   console.log('Generated keys cleared, imported wallet preserved');
 }
@@ -1365,7 +1594,7 @@ window.addEventListener('load', async () => {
     const info = await rpc('getblockchaininfo');
     console.log('Connected to NITO node:', info);
 
-    // Récupérer et afficher la valeur initiale du compteur au chargement
+
     await updateCounterDisplay();
 
     const themeToggle = $('themeToggle');
@@ -1411,13 +1640,13 @@ window.addEventListener('load', async () => {
     $('generateButton').onclick = async () => {
       updateLastActionTime();
       try {
-        // Générer la phrase mnémonique et la clé HD
+
         const mnemonic = generateHDMnemonic(24);
         const seed = bip39.mnemonicToSeedSync(mnemonic);
         const hdWallet = bip32.fromSeed(seed);
         const hdMasterKey = hdWallet.toBase58();
 
-        // Dériver la première adresse bech32
+
         const bech32Node = hdWallet.derivePath("m/84'/0'/0'/0/0");
         const pubkey = Buffer.from(bech32Node.publicKey);
         const keyPair = ECPair.fromPrivateKey(bech32Node.privateKey, { network: NITO_NETWORK });
@@ -1426,7 +1655,7 @@ window.addEventListener('load', async () => {
         const p2wpkh = bitcoin.payments.p2wpkh({ pubkey: pubkey, network: NITO_NETWORK });
         const p2sh = bitcoin.payments.p2sh({ redeem: p2wpkh, network: NITO_NETWORK });
 
-        // Dériver l'adresse Taproot (bech32m)
+
         const taprootNode = hdWallet.derivePath("m/86'/0'/0'/0/0");
         const tapInternalPubkey = toXOnly(taprootNode.publicKey);
         const p2tr = bitcoin.payments.p2tr({ internalPubkey: tapInternalPubkey, network: NITO_NETWORK });
@@ -1447,15 +1676,15 @@ window.addEventListener('load', async () => {
           throw new Error(i18next.t('errors.invalid_addresses'));
         }
 
-        // Afficher seulement xprv et mnémonique (pas WIF/Hex)
+
         $('hdMasterKey').textContent = hdMasterKey;
         $('mnemonicPhrase').textContent = mnemonic;
 
-        // Flouter
+
         $('hdMasterKey').classList.add('blurred');
         $('mnemonicPhrase').classList.add('blurred');
 
-        // Afficher adresses bech32 et bech32m (sans soldes)
+
         $('generatedAddress').innerHTML = DOMPurify.sanitize(`
           Bech32: <span id="generatedBech32Address">${addresses.bech32}</span> <button class="copy-btn" id="copyGeneratedBech32Addr">📋</button><br>
           Bech32m (Taproot): <span id="generatedTaprootAddress">${addresses.taproot}</span> <button class="copy-btn" id="copyGeneratedTaprootAddr">📋</button>
@@ -1467,13 +1696,13 @@ window.addEventListener('load', async () => {
         const copyGeneratedTaprootAddr = $('copyGeneratedTaprootAddr');
         if (copyGeneratedTaprootAddr) copyGeneratedTaprootAddr.onclick = () => copyToClipboard('generatedTaprootAddress');
 
-        // Masquer les éléments WIF/Hex si présent (e.g., sections HTML)
-        const wifSection = document.getElementById('wifSection'); // Assumer ID pour la section WIF
-        const hexSection = document.getElementById('hexSection'); // Assumer ID pour la section Hex
+
+        const wifSection = document.getElementById('wifSection');
+        const hexSection = document.getElementById('hexSection');
         if (wifSection) wifSection.style.display = 'none';
         if (hexSection) hexSection.style.display = 'none';
 
-        // Boutons de révélation HD
+
         const revealHdKey = $('revealHdKey');
         const revealMnemonic = $('revealMnemonic');
         if (revealHdKey) {
@@ -1497,7 +1726,7 @@ window.addEventListener('load', async () => {
           };
         }
 
-        // Incrémenter le compteur après la génération réussie
+
         await incrementCounter();
         await updateCounterDisplay();
       } catch (e) {
@@ -1519,22 +1748,22 @@ window.addEventListener('load', async () => {
 
         let addresses;
 
-        importType = ''; // Reset importType
+        importType = '';
 
         if (input.startsWith('xprv')) {
-          // Clé HD (xprv)
+
           addresses = importHDWallet(input, hdPassphrase);
           importType = 'hd';
         } else if (input.split(' ').length >= 12 && input.split(' ').length <= 24) {
-          // Phrase mnémonique (12 ou 24 mots)
+
           addresses = importHDWallet(input, hdPassphrase);
           importType = 'hd';
         } else if (/^[0-9a-fA-F]{64}$/.test(input)) {
-          // Clé privée hex (64 caractères)
+
           addresses = importHex(input);
           importType = 'single';
         } else {
-          // Clé privée WIF
+
           addresses = importWIF(input);
           importType = 'single';
         }
@@ -1578,7 +1807,7 @@ window.addEventListener('load', async () => {
         };
         console.log('Wallet imported (public info only):', filteredAddresses)
 
-        // Exposition variables pour messagerie
+
         window.walletKeyPair = walletKeyPair;
         window.walletPublicKey = walletPublicKey;
         window.bech32Address = bech32Address;
@@ -1607,20 +1836,20 @@ window.addEventListener('load', async () => {
         const copyTaprootAddr = $('copyTaprootAddr');
         if (copyTaprootAddr && importType === 'hd') copyTaprootAddr.onclick = () => copyToClipboard('taprootAddress');
 
-        // Adapter le menu sélecteur debitAddressType dynamiquement
+
         const debitTypeSelect = $('debitAddressType');
         if (debitTypeSelect) {
-          // Effacer les options actuelles
+
           debitTypeSelect.innerHTML = '';
 
-          // Pour single (WIF/Hex) : seulement bech32
+
           if (importType === 'single') {
             const bech32Option = document.createElement('option');
             bech32Option.value = 'bech32';
             bech32Option.textContent = 'bech32';
             debitTypeSelect.appendChild(bech32Option);
           } else if (importType === 'hd') {
-            // Pour HD : seulement bech32 et bech32m
+
             const bech32Option = document.createElement('option');
             bech32Option.value = 'bech32';
             bech32Option.textContent = 'bech32';
@@ -1654,7 +1883,7 @@ window.addEventListener('load', async () => {
           console.log('Consolidate button already present, event attached');
         }
 
-        // Ajouter la fonctionnalité MAX
+
         const maxButton = $('maxButton');
         if (maxButton) {
           maxButton.onclick = async () => {
@@ -1672,17 +1901,15 @@ window.addEventListener('load', async () => {
                 return alert(i18next.t('errors.no_utxo_available_max'));
               }
 
-              // Trier par montant décroissant et limiter à 15 UTXOs max pour optimiser
+
               workingIns.sort((a, b) => b.amount - a.amount);
-              const selectedIns = workingIns.slice(0, 15);
+              const selectedIns = workingIns;
 
               let total = selectedIns.reduce((sum, u) => sum + Math.round(u.amount * 1e8), 0);
 
-              const feeRate = DYNAMIC_FEE_RATE || MIN_FEE_RATE;
-              const fees = Math.max(
-                Math.round((selectedIns.length * (sourceType === 'p2tr' ? 57.5 : 68) + 50) * (feeRate * 1e8) / 1000),
-                Math.round(MIN_CONSOLIDATION_FEE * 1e8)
-              );
+
+              const destScriptType = getAddressType(dest);
+              const fees = feeForVsize(estimateVBytes(sourceType, selectedIns.length, [destScriptType]));
 
               const maxAmount = (total - fees) / 1e8;
               hideLoadingSpinner();
