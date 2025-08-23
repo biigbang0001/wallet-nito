@@ -82,7 +82,115 @@ let consolidateButtonInjected = false;
 let lastActionTime = null;
 let inactivityTimeout = null;
 let timerInterval = null;
-let importType = ''; // 'single' for WIF/Hex, 'hd' for xprv/mnemonic
+let importType = '';
+
+// === HD scanning helpers (minimal, non-invasive) ===
+const HD_SCAN_CHUNK = 50;           // derive 50 addresses per chunk per branch
+const HD_SCAN_MAX_CHUNKS = 40;      // up to 2000 addresses per branch (safe)
+
+/**
+ * Derive a chunk of HD addresses for a given family ('bech32' BIP84 or 'taproot' BIP86),
+ * both external (0) and internal/change (1) branches, from start index with count addresses.
+ * Returns { descriptors, byScriptHex } where byScriptHex maps scriptPubKey hex -> { keyPair, scriptType, tapInternalKey? }.
+ */
+function deriveHdChunk(family, start, count) {
+  if (!hdWallet) throw new Error('HD wallet not initialized');
+  const byScriptHex = {};
+  const descriptors = [];
+  const network = NITO_NETWORK;
+
+  if (family === 'bech32') {
+    const account = hdWallet.derivePath("m/84'/0'/0'");
+    for (let chain = 0; chain <= 1; chain++) {
+      const branch = account.derive(chain);
+      for (let i = start; i < start + count; i++) {
+        const node = branch.derive(i);
+        if (!node.privateKey) continue;
+        const pubkey = Buffer.from(node.publicKey);
+        const keyPair = ECPair.fromPrivateKey(node.privateKey, { network });
+        const pay = bitcoin.payments.p2wpkh({ pubkey, network });
+        if (!pay.address || !pay.output) continue;
+        const scriptHex = pay.output.toString('hex').toLowerCase();
+        byScriptHex[scriptHex] = { keyPair, scriptType: 'p2wpkh' };
+        descriptors.push(`addr(${pay.address})`);
+      }
+    }
+  } else if (family === 'taproot') {
+    const account = hdWallet.derivePath("m/86'/0'/0'");
+    for (let chain = 0; chain <= 1; chain++) {
+      const branch = account.derive(chain);
+      for (let i = start; i < start + count; i++) {
+        const node = branch.derive(i);
+        if (!node.privateKey) continue;
+        const internal = toXOnly(node.publicKey);
+        const keyPair = ECPair.fromPrivateKey(node.privateKey, { network });
+        const pay = bitcoin.payments.p2tr({ internalPubkey: internal, network });
+        if (!pay.address || !pay.output) continue;
+        const scriptHex = pay.output.toString('hex').toLowerCase();
+        byScriptHex[scriptHex] = { keyPair, scriptType: 'p2tr', tapInternalKey: internal };
+        descriptors.push(`addr(${pay.address})`);
+      }
+    }
+  } else {
+    throw new Error('Unknown family for HD derivation');
+  }
+
+  return { descriptors, byScriptHex };
+}
+
+/**
+ * Scan HD UTXOs for the given family using RPC scantxoutset in chunks.
+ * Returns an array of utxos enriched with { keyPair, scriptType, tapInternalKey? }.
+ */
+async function scanHdUtxosForFamily(family) {
+  const allUtxos = [];
+  const seen = new Set(); // key "txid:vout" to avoid duplicates
+
+  for (let chunk = 0; chunk < HD_SCAN_MAX_CHUNKS; chunk++) {
+    const start = chunk * HD_SCAN_CHUNK;
+    const { descriptors, byScriptHex } = deriveHdChunk(family, start, HD_SCAN_CHUNK);
+    if (!descriptors.length) break;
+
+    let scan;
+    try {
+      scan = await rpc('scantxoutset', ['start', descriptors]);
+    } catch (e) {
+      console.error('scantxoutset failed for HD scan chunk', { family, start }, e);
+      break;
+    }
+    const unspents = (scan && scan.unspents) ? scan.unspents : [];
+    if (!unspents.length && chunk > 0) {
+      // stop when a further chunk yields no UTXOs at all
+      break;
+    }
+
+    for (const u of unspents) {
+      if (!/^[0-9a-fA-F]+$/.test(u.scriptPubKey)) continue;
+      const scriptHex = u.scriptPubKey.toLowerCase();
+      const keyInfo = byScriptHex[scriptHex];
+      const key = `${u.txid}:${u.vout}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+
+      const scriptType = detectScriptType(u.scriptPubKey);
+      const enriched = {
+        txid: u.txid,
+        vout: u.vout,
+        amount: u.amount,
+        scriptPubKey: u.scriptPubKey,
+        scriptType
+      };
+      if (keyInfo) {
+        enriched.keyPair = keyInfo.keyPair;
+        if (keyInfo.tapInternalKey) enriched.tapInternalKey = keyInfo.tapInternalKey;
+      }
+      allUtxos.push(enriched);
+    }
+  }
+
+  return allUtxos;
+}
+; // 'single' for WIF/Hex, 'hd' for xprv/mnemonic
 
 // Initialiser i18next avec l'objet global window.i18next
 i18next
@@ -454,15 +562,26 @@ function importHex(hex) {
   }
 }
 
+
 async function utxos(addr) {
   try {
+    // HD mode: gather UTXOs from all derived addresses of the same family (bech32 or taproot)
+    if (importType === 'hd' && hdWallet) {
+      const addrType = getAddressType(addr);
+      if (addrType === 'p2wpkh') {
+        return await scanHdUtxosForFamily('bech32');
+      } else if (addrType === 'p2tr') {
+        return await scanHdUtxosForFamily('taproot');
+      }
+      // fallthrough: if not bech32/taproot just scan this single address
+    }
+
     const scan = await rpc('scantxoutset', ['start', [`addr(${addr})`]]);
     if (!scan.success || !scan.unspents) return [];
     return scan.unspents.map(u => {
       if (!/^[0-9a-fA-F]+$/.test(u.scriptPubKey)) {
         throw new Error(`Invalid scriptPubKey for UTXO ${u.txid}:${u.vout}`);
       }
-      const scriptBuffer = Buffer.from(u.scriptPubKey, 'hex');
       const scriptType = detectScriptType(u.scriptPubKey);
       if (scriptType === 'unknown') {
         throw new Error(`Non-compliant scriptPubKey: ${u.scriptPubKey}`);
@@ -481,8 +600,14 @@ async function utxos(addr) {
   }
 }
 
+
+
 async function balance(addr) {
   try {
+    if (importType === 'hd' && hdWallet) {
+      const ins = await utxos(addr);
+      return ins.reduce((sum, u) => sum + (u.amount || 0), 0);
+    }
     const scan = await rpc('scantxoutset', ['start', [`addr(${addr})`]]);
     return scan.total_amount || 0;
   } catch (e) {
@@ -490,6 +615,7 @@ async function balance(addr) {
     throw e;
   }
 }
+
 
 function getAddressType(addr) {
   try {
@@ -638,7 +764,7 @@ async function signTxBatch(to, amt, specificUtxos, isConsolidation = true) {
         hash: utxo.txid,
         index: utxo.vout,
         witnessUtxo: { script: scriptBuffer, value: Math.round(utxo.amount * 1e8) },
-        tapInternalKey: taprootPublicKey
+        tapInternalKey: (utxo.tapInternalKey || taprootPublicKey)
       });
     }
   }
@@ -653,11 +779,14 @@ async function signTxBatch(to, amt, specificUtxos, isConsolidation = true) {
   }
 
   for (let i = 0; i < selectedIns.length; i++) {
+    const u = selectedIns[i];
     if (sendScriptType === 'p2tr') {
-      const tweakedSigner = tweakSigner(taprootKeyPair, { network: NITO_NETWORK });
+      const kp = (u.keyPair || taprootKeyPair);
+      const tweakedSigner = tweakSigner(kp, { network: NITO_NETWORK });
       psbt.signInput(i, tweakedSigner);
     } else {
-      psbt.signInput(i, walletKeyPair);
+      const kp = (u.keyPair || walletKeyPair);
+      psbt.signInput(i, kp);
     }
   }
 
@@ -746,18 +875,11 @@ async function signTx(to, amt, isConsolidation = false) {
     psbt.addOutput({ address: walletAddress, value: change });
   }
 
-  const signer = {
-    network: walletKeyPair.network,
-    privateKey: walletKeyPair.privateKey,
-    publicKey: walletPublicKey,
-    sign: (hash) => Buffer.from(walletKeyPair.sign(hash))
-  };
-
   for (let i = 0; i < selectedIns.length; i++) {
-    psbt.signInput(i, signer, [bitcoin.Transaction.SIGHASH_ALL]);
+    const kp = (selectedIns[i].keyPair || walletKeyPair);
+    psbt.signInput(i, kp);
   }
-
-  psbt.finalizeAllInputs();
+psbt.finalizeAllInputs();
   const tx = psbt.extractTransaction();
   const hex = tx.toHex();
 
@@ -851,7 +973,7 @@ async function signTxWithPSBT(to, amt, isConsolidation = false) {
         hash: utxo.txid,
         index: utxo.vout,
         witnessUtxo: { script: scriptBuffer, value: Math.round(utxo.amount * 1e8) },
-        tapInternalKey: taprootPublicKey
+        tapInternalKey: (utxo.tapInternalKey || taprootPublicKey)
       });
     } else {
       throw new Error(i18next.t('errors.unsupported_address_type'));
@@ -868,11 +990,14 @@ async function signTxWithPSBT(to, amt, isConsolidation = false) {
   }
 
   for (let i = 0; i < selectedIns.length; i++) {
+    const u = selectedIns[i];
     if (sendScriptType === 'p2tr') {
-      const tweakedSigner = tweakSigner(taprootKeyPair, { network: NITO_NETWORK });
+      const kp = (u.keyPair || taprootKeyPair);
+      const tweakedSigner = tweakSigner(kp, { network: NITO_NETWORK });
       psbt.signInput(i, tweakedSigner);
     } else {
-      psbt.signInput(i, walletKeyPair);
+      const kp = (u.keyPair || walletKeyPair);
+      psbt.signInput(i, kp);
     }
   }
 
