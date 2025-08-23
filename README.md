@@ -1,4 +1,4 @@
-# Wallet Nito
+# Wallet Nito HD + wif/hex Import
 
 Wallet Nito is a comprehensive web-based cryptocurrency wallet for managing NITO tokens. This project allows users to generate private keys, import wallets, send transactions securely, and **exchange encrypted messages on-chain**. It communicates with a NITO node to fetch balances, prepare, and broadcast transactions, while supporting multiple languages for a better user experience.
 
