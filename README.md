@@ -28,7 +28,7 @@ This guide walks you through a **fast setup**, a **production Nginx** configurat
 2. **Reverse proxy `/api/`** to your NITO node with **Nginx** (sample config below).
 3. Visit `https://<your-domain>`:
 
-   * Generate or import a key (WIF/HEX unchanged).
+   * Generate or import a key.
    * See balance/UTXOs, **send NITO**, try **encrypted messaging**.
 4. (Optional) Enable the **keys counter** with `counter.php`.
 
