@@ -169,7 +169,7 @@ sudo nginx -t && sudo systemctl restart nginx
 
 ## Generated Keys Counter 
 
-The frontend expects a working counter endpoint and a writable counter file. If missing, the UI will error.
+The frontend expects a working counter endpoint and a writable counter file.
 
 1. Create storage & set permissions:
 
