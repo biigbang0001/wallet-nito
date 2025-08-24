@@ -238,7 +238,7 @@ Details:
 
 ## UTXO Policy
 
-* **Protection for normal transactions**: **all UTXOs < 0.00005 NITO are excluded** from selection (they often carry messaging dust/metadata or are too small to spend efficiently).
+* **Protection for normal transactions**: **all UTXOs > 0.00005 NITO are excluded** from selection (they often carry messaging dust/metadata or are too small to spend efficiently).
 * **Consolidation**: ignores the protection and **spends absolutely everything** to a single output (your address) to tidy your UTXO set.
 * **MAX button**: uses **all spendable UTXOs** (after the protection rule) and **deducts fees** before auto-filling the amount.
 
