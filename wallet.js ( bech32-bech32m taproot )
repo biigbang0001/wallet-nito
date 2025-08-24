@@ -496,7 +496,7 @@ async function updateCounterDisplay() {
 async function filterOpReturnUtxos(utxos) {
 
   const filteredUtxos = utxos.filter(utxo => utxo.amount >= 0.00005);
-  console.log(`UTXOs filtrés: ${filteredUtxos.length}/${utxos.length} (minimum 0.000003 NITO)`);
+  console.log(`UTXOs filtrés: ${filteredUtxos.length}/${utxos.length} (< 0.00005 NITO)`);
   return filteredUtxos;
 }
 
