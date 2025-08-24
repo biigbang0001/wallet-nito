@@ -1,17 +1,17 @@
 # Wallet Nito — HD + WIF/HEX Import
 
-**Wallet Nito** is a web-based cryptocurrency wallet for managing **NITO**. It lets you generate/import keys, send transactions securely, and **exchange encrypted messages on-chain**. The frontend talks to a NITO node for UTXOs, fee hints, transaction prep and broadcast, and ships with multilingual UI.
+**Wallet Nito** is a web-based cryptocurrency wallet for managing **NITO**. It lets you generate/import keys, send transactions securely, and **exchange encrypted messages on-chain**. The frontend talks to a NITO node for UTXOs, fee hints, transaction prep/broadcast, and ships with multilingual UI.
 
-This guide walks you through a **fast setup**, a **production Nginx** configuration (HTTPS), and an optional **generated keys counter**.
+This guide includes a **fast setup**, a **production Nginx** configuration (HTTPS + reverse proxy), and the **generated keys counter (REQUIRED)**.
 
 ## Features
 
-* 📬 **Send / receive NITO**
-* 🔐 **Key Management** — client-side keygen; import by **WIF/HEX** 
-* 🔒 **Encrypted Messaging** — Noble ECDH + **AES-GCM**, stored via **OP\_RETURN**
-* 🌍 **Multi-Language** — FR, EN, DE, ES, NL, RU, ZH
-* 🔄 **UTXO Consolidation** — one-click cleanup tool
-* 🧭 **HD Support** — BIP84 Bech32 + BIP86 Taproot; descriptor-based scanning
+* 📬 Send / receive NITO
+* 🔐 Key Management — client-side keygen; import by **WIF/HEX** 
+* 🔒 Encrypted Messaging — Noble ECDH + **AES-GCM**, stored via **OP\_RETURN**
+* 🌍 Multi-Language — FR, EN, DE, ES, NL, RU, ZH
+* 🔄 UTXO Consolidation — one-click cleanup tool
+* 🧭 HD Support — BIP84 Bech32 + BIP86 Taproot; descriptor-based scanning
 
 ---
 
@@ -25,12 +25,12 @@ This guide walks you through a **fast setup**, a **production Nginx** configurat
    sudo chown -R www-data:www-data .
    sudo chmod -R 755 .
    ```
-2. **Reverse proxy `/api/`** to your NITO node with **Nginx** (sample config below).
-3. Visit `https://<your-domain>`:
+2. **(REQUIRED) Enable the keys counter** (PHP endpoint + writable file). See **Generated Keys Counter (Required)** below.
+3. **Reverse proxy `/api/`** to your NITO node with **Nginx** (sample config below).
+4. Visit `https://<your-domain>`:
 
-   * Generate or import a key.
+   * Generate or import a key (WIF/HEX unchanged).
    * See balance/UTXOs, **send NITO**, try **encrypted messaging**.
-4. (Optional) Enable the **keys counter** with `counter.php`.
 
 > The reverse proxy avoids CORS issues and keeps your node URL/auth server-side.
 
@@ -40,7 +40,7 @@ This guide walks you through a **fast setup**, a **production Nginx** configurat
 
 * Linux server (Ubuntu recommended), domain with DNS set up
 * **Nginx** (reverse proxy + TLS), **Git**
-* **PHP-FPM** (for the optional counter)
+* **PHP-FPM (REQUIRED)** — used by the **generated keys counter**
 * A reachable **NITO node** (yours or a trusted one)
 
 ---
@@ -53,7 +53,7 @@ This guide walks you through a **fast setup**, a **production Nginx** configurat
 
 **Option B — Public node:**
 
-* Possible for testing; mind privacy/reliability. Keep your own node for production.
+* Possible for testing; mind privacy/reliability. Use your own node for production.
 
 ---
 
@@ -72,6 +72,7 @@ Sample site config (`/etc/nginx/sites-available/<your-domain>`). Replace placeho
 * `<your-domain>` e.g. `wallet-nito.example.com`
 * `<your-node-url>` e.g. `http://127.0.0.1:8825/`
 * `<base64-auth>` if your node uses HTTP Basic auth (Base64 of `user:pass`)
+* Adjust the PHP-FPM socket path to your version (e.g. `php8.1-fpm.sock`)
 
 ```nginx
 server {
@@ -91,7 +92,6 @@ server {
     root /var/www/wallet-nito;
     index index.html;
 
-    # Strict but practical CSP (tweak if you add CDNs)
     add_header Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline' https://esm.sh https://cdn.jsdelivr.net https://cdnjs.cloudflare.com https://unpkg.com; connect-src 'self' https://<your-domain>/api/ https://<your-domain>/langs/ https://explorer.nito.network https://nitoexplorer.org https://esm.sh https://cdn.jsdelivr.net https://cdnjs.cloudflare.com; img-src 'self' https://raw.githubusercontent.com; style-src 'self' 'unsafe-inline';" always;
 
     # Proxy to your node (no-cache + CORS for the webapp)
@@ -135,10 +135,10 @@ server {
         try_files $uri $uri/ =404;
     }
 
-    # Optional PHP counter
+    # REQUIRED: PHP for the generated keys counter
     location ~ \.php$ {
         include snippets/fastcgi-php.conf;
-        fastcgi_pass unix:/run/php/php8.1-fpm.sock;
+        fastcgi_pass unix:/run/php/php8.1-fpm.sock;  # adjust to your PHP version
         fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;
         include fastcgi_params;
         add_header Cache-Control "no-cache, no-store, must-revalidate" always;
@@ -167,9 +167,11 @@ sudo nginx -t && sudo systemctl restart nginx
 
 ---
 
-## Optional: Generated Keys Counter
+## Generated Keys Counter (REQUIRED)
 
-Create storage & PHP endpoint:
+The frontend expects a working counter endpoint and a writable counter file. If missing, the UI will error.
+
+1. Create storage & set permissions:
 
 ```bash
 sudo mkdir -p /var/www/wallet-nito/data /var/www/wallet-nito/api
@@ -178,7 +180,7 @@ sudo chown -R www-data:www-data /var/www/wallet-nito/data
 sudo chmod 600 /var/www/wallet-nito/data/counter.txt
 ```
 
-`/var/www/wallet-nito/api/counter.php`:
+2. Create the PHP endpoint at **`/var/www/wallet-nito/api/counter.php`**:
 
 ```php
 <?php
@@ -190,6 +192,15 @@ if($_SERVER['REQUEST_METHOD']==='GET'){ echo json_encode(['count'=>readCounter($
 elseif($_SERVER['REQUEST_METHOD']==='POST'){ echo json_encode(['count'=>incrementCounter($counterFile)]); }
 else{ http_response_code(405); echo json_encode(['error'=>'Method Not Allowed']); }
 ```
+
+3. Make sure your Nginx PHP location block is active (see above), and that `/api/counter.php` is reachable:
+
+```bash
+curl -s https://<your-domain>/api/counter.php
+# -> {"count":0}
+```
+
+> The app will invoke this endpoint on load and when generating a new key. If it returns 404/500 or cannot write to `counter.txt`, you’ll see errors in the UI.
 
 ---
 
@@ -211,7 +222,7 @@ else{ http_response_code(405); echo json_encode(['error'=>'Method Not Allowed'])
 
 ---
 
-## Fee Policy (clear & deterministic)
+## Fee Policy
 
 * `effectiveFeeRate = max( estimatesmartfee(6), mempoolminfee, relayfee, min_fee )`
 * `fees = ceil( vbytes × effectiveFeeRate × 1.2 × 1e8 / 1000 )`
@@ -232,7 +243,7 @@ Details:
 * **Consolidation**: ignores the protection and **spends absolutely everything** to a single output (your address) to tidy your UTXO set.
 * **MAX button**: uses **all spendable UTXOs** (after the protection rule) and **deducts fees** before auto-filling the amount.
 
-> Messaging uses **Bech32 (P2WPKH)**. Protection applies to all small UTXOs, independent of origin.
+> Messaging uses **Bech32 (P2WPKH)**. Protection applies to small UTXOs regardless of origin.
 
 ---
 
@@ -243,12 +254,11 @@ Details:
 3. **Write & send** — the message is ECDH-derived, encrypted with AES-GCM, then committed via **OP\_RETURN**.
 4. If you’ve sent many messages and normal spends struggle, **run consolidation** and re-publish if needed.
 
-**Under the hood:**
+Under the hood:
 
 * Key exchange: Noble secp256k1 **ECDH**
 * Encryption: **AES-GCM**
 * Storage: **OP\_RETURN** chunks (+ reassembly)
-* Integrity checks and progress indicators in UI
 
 ---
 
@@ -270,6 +280,15 @@ Details:
 **“Insufficient data or no feerate found” (estimatesmartfee)**
 
 * The wallet automatically falls back to `mempoolminfee/relayfee`. Ensure your node is synced and has peers.
+
+**Counter errors**
+
+* `GET /api/counter.php` must return JSON and be writable. Check:
+
+  * PHP-FPM running and Nginx `location ~ \.php$` block
+  * File exists: `/var/www/wallet-nito/data/counter.txt`
+  * Ownership/permissions: `www-data` + `600`
+  * HTTPS returns: `{"count": <number>}`
 
 **CORS / TLS**
 
