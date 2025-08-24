@@ -208,8 +208,7 @@ curl -s https://<your-domain>/api/counter.php
 
 * **Bech32 (BIP84)** — **P2WPKH** (used by the messaging system)
 * **Bech32m (BIP86)** — **P2TR** (Taproot)
-* Legacy / P2SH — validated, with spend flows centered on BIP84/BIP86
-
+* 
 ### HD Scan & Recovery
 
 * **Descriptors**:
