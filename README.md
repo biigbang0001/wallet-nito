@@ -25,7 +25,7 @@ This guide includes a **fast setup**, a **production Nginx** configuration (HTTP
    sudo chown -R www-data:www-data .
    sudo chmod -R 755 .
    ```
-2. **(REQUIRED) Enable the keys counter** (PHP endpoint + writable file). See **Generated Keys Counter (Required)** below.
+2. **Enable the keys counter** (PHP endpoint + writable file). See **Generated Keys Counter ** below.
 3. **Reverse proxy `/api/`** to your NITO node with **Nginx** (sample config below).
 4. Visit `https://<your-domain>`:
 
