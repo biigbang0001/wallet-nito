@@ -17,7 +17,7 @@ This guide includes a **fast setup**, a **production Nginx** configuration (HTTP
 
 ## Quick Start (5 minutes)
 
-1. **Clone** to your web root:
+1. **Clone**:
 
    ```bash
    git clone https://github.com/biigbang0001/wallet-nito.git /var/www/wallet-nito
