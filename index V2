@@ -31,8 +31,8 @@
       margin: 0;
       padding: 20px;
       background: 
-        radial-gradient(ellipse at top, #1a0033 0%, #000 50%),
-        linear-gradient(45deg, #000428 0%, #004e92 100%);
+        radial-gradient(ellipse at top, #330011 0%, #000 50%),
+        linear-gradient(45deg, #2d1b69 0%, #11998e 100%);
       background-attachment: fixed;
       color: #fff;
       min-height: 100vh;
@@ -51,12 +51,6 @@
       background: url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><circle cx="20" cy="20" r="1" fill="%2300ffff" opacity="0.3"><animate attributeName="opacity" values="0.3;1;0.3" dur="2s" repeatCount="indefinite"/></circle><circle cx="80" cy="30" r="1" fill="%23ff0080" opacity="0.5"><animate attributeName="opacity" values="0.5;0.1;0.5" dur="3s" repeatCount="indefinite"/></circle><circle cx="60" cy="70" r="1" fill="%2300ff41" opacity="0.4"><animate attributeName="opacity" values="0.4;0.9;0.4" dur="1.5s" repeatCount="indefinite"/></circle></svg>') repeat;
       pointer-events: none;
       z-index: -1;
-    }
-
-    body.dark-mode {
-      background: 
-        radial-gradient(ellipse at top, #330011 0%, #000 50%),
-        linear-gradient(45deg, #2d1b69 0%, #11998e 100%);
     }
 
     h1 {
@@ -293,32 +287,6 @@
     .consolidate-button:hover {
       background: rgba(128, 0, 255, 0.1);
       box-shadow: 0 0 20px var(--neon-purple);
-    }
-
-    .theme-toggle {
-      position: fixed;
-      top: 20px;
-      right: 20px;
-      background: linear-gradient(45deg, var(--neon-cyan), var(--neon-purple));
-      border: none;
-      font-size: 24px;
-      cursor: pointer;
-      z-index: 1000;
-      color: #000;
-      padding: 12px;
-      border-radius: 50%;
-      width: 50px;
-      height: 50px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      box-shadow: 0 0 30px rgba(0, 255, 255, 0.5);
-      transition: all 0.3s ease;
-    }
-
-    .theme-toggle:hover {
-      transform: rotate(180deg) scale(1.1);
-      box-shadow: 0 0 40px rgba(0, 255, 255, 0.8);
     }
 
     .blurred {
@@ -573,14 +541,14 @@
       padding: 30px;
       border-top: 1px solid rgba(0, 255, 255, 0.3);
       font-size: 14px;
-      color: #aaa;
-      background: linear-gradient(45deg, rgba(0, 0, 0, 0.8), rgba(20, 20, 40, 0.8));
+      color: #bbb;
+      background: linear-gradient(45deg, rgba(44, 62, 80, 0.5), rgba(26, 37, 47, 0.5));
       backdrop-filter: blur(15px);
       border-radius: 15px;
     }
 
     footer a {
-      color: var(--neon-cyan);
+      color: #64b5f6;
       text-decoration: none;
       transition: all 0.3s ease;
     }
@@ -593,7 +561,8 @@
 </head>
 <body>
   <div id="loadingSpinner"></div>
-  <button class="theme-toggle" id="themeToggle">🌙</button>
+  <!-- Dummy element to prevent themeToggle missing error (remove if wallet.js is updated) -->
+  <div id="themeToggle" style="display: none;"></div>
 
   <div class="section">
     <label for="languageSelect" data-i18n="language_label">Langue :</label>
@@ -685,20 +654,18 @@
         📋 <span data-i18n="encrypted_messaging.publish_info">Publiez votre clé publique une fois pour permettre aux autres de vous envoyer des messages cryptés.</span>
       </p>
 
-
       <hr style="margin: 20px 0; border: none; border-top: 1px solid #e0e0e0;">
 
-    <!-- Écriture de message -->
-    <h3 data-i18n="encrypted_messaging.write_title">✍️ Écrire un message</h3>
-    <textarea id="messageInput" maxlength="50000" placeholder="Votre message (max 50000 caractères)" data-i18n="[placeholder]encrypted_messaging.message_placeholder"></textarea>
-    <p class="char-counter" id="messageCharCounter">0/50000 </p>
+      <!-- Écriture de message -->
+      <h3 data-i18n="encrypted_messaging.write_title">✍️ Écrire un message</h3>
+      <textarea id="messageInput" maxlength="50000" placeholder="Votre message (max 50000 caractères)" data-i18n="[placeholder]encrypted_messaging.message_placeholder"></textarea>
+      <p class="char-counter" id="messageCharCounter">0/50000 </p>
 
-    <div style="margin-top: 10px;">
-      <button id="sendMessageButton" data-i18n="encrypted_messaging.send_button">📤 Envoyer</button>
-      <button id="clearMessageButton" data-i18n="encrypted_messaging.clear_button">🗑️ Effacer</button>
+      <div style="margin-top: 10px;">
+        <button id="sendMessageButton" data-i18n="encrypted_messaging.send_button">📤 Envoyer</button>
+        <button id="clearMessageButton" data-i18n="encrypted_messaging.clear_button">🗑️ Effacer</button>
+      </div>
     </div>
-  </div>
-
 
     <!-- Formulaire d'envoi (masqué par défaut) -->
     <div id="sendMessageForm" class="send-form">
@@ -783,118 +750,91 @@
 
   <script type="module" src="./wallet.js"></script>
 
-  <footer style="
-    text-align: center;
-    margin-top: 40px;
-    padding: 20px;
-    border-top: 1px solid #e0e0e0;
-    font-size: 14px;
-    color: #666;
-    background: linear-gradient(to bottom, rgba(230, 240, 250, 0.5), rgba(179, 212, 252, 0.5));
-  ">
+  <footer>
     <div style="margin-bottom: 10px;">
       🔓 <span data-i18n="footer.open_source">Ce projet est open source</span> -
-      <a href="https://github.com/biigbang0001/wallet-nito" target="_blank" style="color: #1e3a8a; text-decoration: none;">
+      <a href="https://github.com/biigbang0001/wallet-nito" target="_blank">
         <span data-i18n="footer.view_code">Voir le code sur GitHub</span> 📖
       </a>
     </div>
     <div>
       🌐 <span data-i18n="footer.official_site">Site officiel NITO</span> -
-      <a href="https://nito.network/" target="_blank" style="color: #1e3a8a; text-decoration: none;">
+      <a href="https://nito.network/" target="_blank">
         nito.network 🚀
       </a>
     </div>
   </footer>
 
-  <!-- Styles pour le mode sombre du footer -->
-  <style>
-    body.dark-mode footer {
-      background: linear-gradient(to bottom, rgba(44, 62, 80, 0.5), rgba(26, 37, 47, 0.5)) !important;
-      border-top: 1px solid #555 !important;
-      color: #bbb !important;
-    }
-
-    body.dark-mode footer a {
-      color: #64b5f6 !important;
-    }
-
-    footer a:hover {
-      text-decoration: underline !important;
-    }
-  </style>
-
-<script>
-(function(){
-  const tabs = document.querySelectorAll('#mainTabs button');
-  function showTab(id){
-    document.querySelectorAll('.tab-pane').forEach(p=>{
-      p.style.display = (p.id === id) ? 'block' : 'none';
-    });
-    tabs.forEach(b=>b.classList.toggle('active', b.dataset.tab === id));
-    // Scroll to top of content for better UX
-    window.scrollTo({top: 0, behavior: 'smooth'});
-  }
-  tabs.forEach(btn => btn.addEventListener('click', () => {
-    const target = btn.dataset.tab;
-    const needsImport = (target === 'tab-send' || target === 'tab-msg');
-    const isImported = !!(window.walletKeyPair);
-    if (needsImport && !isImported) {
-      if (window.i18next && i18next.t) {
-        alert(i18next.t('errors.import_first'));
-      } else {
-        alert('Veuillez importer un wallet d\'abord.');
+  <script>
+    (function(){
+      const tabs = document.querySelectorAll('#mainTabs button');
+      function showTab(id){
+        document.querySelectorAll('.tab-pane').forEach(p=>{
+          p.style.display = (p.id === id) ? 'block' : 'none';
+        });
+        tabs.forEach(b=>b.classList.toggle('active', b.dataset.tab === id));
+        // Scroll to top of content for better UX
+        window.scrollTo({top: 0, behavior: 'smooth'});
       }
-      showTab('tab-gen');
-      return;
-    }
-    showTab(target);
-  }));
-  // Expose helper to programmatically enable tabs after import if needed
-  window.__nitoShowTab = showTab;
-})();
-</script>
+      tabs.forEach(btn => btn.addEventListener('click', () => {
+        const target = btn.dataset.tab;
+        const needsImport = (target === 'tab-send' || target === 'tab-msg');
+        const isImported = !!(window.walletKeyPair);
+        if (needsImport && !isImported) {
+          if (window.i18next && i18next.t) {
+            alert(i18next.t('errors.import_first'));
+          } else {
+            alert('Veuillez importer un wallet d\'abord.');
+          }
+          showTab('tab-gen');
+          return;
+        }
+        showTab(target);
+      }));
+      // Expose helper to programmatically enable tabs after import if needed
+      window.__nitoShowTab = showTab;
+    })();
+  </script>
 
+  <script>
+    (function(){
+      async function updateSendTabBalance(){
+        try {
+          const sel = document.getElementById('debitAddressType');
+          const out = document.getElementById('sendTabBalance');
+          if (!sel || !out) return;
+          const val = sel.value;
+          const addr = (val === 'p2tr') ? (window.taprootAddress || '') : (window.bech32Address || '');
+          if (!addr) { out.textContent = '0.00000000'; return; }
+          const amt = await window.balance(addr);
+          out.textContent = (amt || 0).toFixed(8);
+        } catch(e){
+          console.error('updateSendTabBalance error:', e);
+        }
+      }
+      window.updateSendTabBalance = updateSendTabBalance;
 
-<script>
-(function(){
-  async function updateSendTabBalance(){
-    try {
-      const sel = document.getElementById('debitAddressType');
-      const out = document.getElementById('sendTabBalance');
-      if (!sel || !out) return;
-      const val = sel.value;
-      const addr = (val === 'p2tr') ? (window.taprootAddress || '') : (window.bech32Address || '');
-      if (!addr) { out.textContent = '0.00000000'; return; }
-      const amt = await window.balance(addr);
-      out.textContent = (amt || 0).toFixed(8);
-    } catch(e){
-      console.error('updateSendTabBalance error:', e);
-    }
-  }
-  window.updateSendTabBalance = updateSendTabBalance;
+      // Hook on select change
+      document.addEventListener('change', (ev) => {
+        if (ev.target && ev.target.id === 'debitAddressType') {
+          updateSendTabBalance();
+        }
+      });
+      // Hook on refresh click
+      document.addEventListener('click', (ev) => {
+        if (ev.target && ev.target.id === 'refreshSendTabBalance') {
+          updateSendTabBalance();
+        }
+      });
 
-  // Hook on select change
-  document.addEventListener('change', (ev) => {
-    if (ev.target && ev.target.id === 'debitAddressType') {
-      updateSendTabBalance();
-    }
-  });
-  // Hook on refresh click
-  document.addEventListener('click', (ev) => {
-    if (ev.target && ev.target.id === 'refreshSendTabBalance') {
-      updateSendTabBalance();
-    }
-  });
-
-  // Also update when Send tab is shown (integrate with tab nav if present)
-  const sendTabButton = document.querySelector('#mainTabs button[data-tab="tab-send"]');
-  if (sendTabButton) {
-    sendTabButton.addEventListener('click', () => setTimeout(updateSendTabBalance, 0));
-  }
-  // Initial attempt (in case we land on send tab directly)
-  setTimeout(updateSendTabBalance, 300);
-})();
-</script>
-
+      // Also update when Send tab is shown (integrate with tab nav if present)
+      const sendTabButton = document.querySelector('#mainTabs button[data-tab="tab-send"]');
+      if (sendTabButton) {
+        sendTabButton.addEventListener('click', () => setTimeout(updateSendTabBalance, 0));
+      }
+      // Initial attempt (in case we land on send tab directly)
+      setTimeout(updateSendTabBalance, 300);
+    })();
+  </script>
 </body>
 </html>
