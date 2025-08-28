@@ -7,7 +7,7 @@ This guide includes a **fast setup**, a **production Nginx** configuration (HTTP
 ## Features
 
 * 📬 Send / receive NITO
-* 🔐 Key Management — client-side keygen; import by **WIF/HEX** 
+* 🔐 Key Management — Client-side HD key generator; import by HD and WIF/HEX keys 
 * 🔒 Encrypted Messaging — Noble ECDH + **AES-GCM**, stored via **OP\_RETURN**
 * 🌍 Multi-Language — FR, EN, DE, ES, NL, RU, ZH
 * 🔄 UTXO Consolidation — one-click cleanup tool
