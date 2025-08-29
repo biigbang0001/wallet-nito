@@ -199,7 +199,7 @@
   },
   "messaging_recipient_title": "📧 Berichtontvanger",
   "messaging_estimated_cost": "Geschatte kosten: 0,0001 NITO (1 transactie)",
-  "messaging_char_counter": "{{length}}/{{max}} tekens",
+  "messaging_char_counter": "{{length}}/{{max}}",
   "progress_indicators": {
     "preparing": "Voorbereiden",
     "sending": "Verzenden",
