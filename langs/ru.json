@@ -199,7 +199,7 @@
   },
   "messaging_recipient_title": "📧 Получатель сообщения",
   "messaging_estimated_cost": "Примерная стоимость: 0.0001 NITO (1 транзакция)",
-  "messaging_char_counter": "{{length}}/{{max}} символов",
+  "messaging_char_counter": "{{length}}/{{max}}",
   "progress_indicators": {
     "preparing": "Подготовка",
     "sending": "Отправка",
