@@ -199,7 +199,7 @@
   },
   "messaging_recipient_title": "📧 Destinataire du message",
   "messaging_estimated_cost": "Coût estimé: 0.0001 NITO (1 transaction)",
-  "messaging_char_counter": "{{length}}/{{max}} caractères",
+  "messaging_char_counter": "{{length}}/{{max}}",
   "progress_indicators": {
     "preparing": "Préparation",
     "sending": "Envoi",
