@@ -199,7 +199,7 @@
   },
   "messaging_recipient_title": "📧 消息收件人",
   "messaging_estimated_cost": "预计费用：0.0001 NITO（1 笔交易）",
-  "messaging_char_counter": "{{length}}/{{max}} 字符",
+  "messaging_char_counter": "{{length}}/{{max}}",
   "progress_indicators": {
     "preparing": "准备中",
     "sending": "发送中",
