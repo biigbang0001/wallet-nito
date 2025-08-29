@@ -1,0 +1,504 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=0.8, user-scalable=yes" />
+  <meta name="theme-color" content="#ffffff" />
+  <title>Wallet NITO</title>
+  <link rel="icon" href="https://raw.githubusercontent.com/biigbang0001/wallet-nito/refs/heads/master/nito.png" />
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.1.6/purify.min.js"></script>
+  <script src="https://unpkg.com/i18next@23.15.1/i18next.min.js"></script>
+  <script src="https://unpkg.com/i18next-http-backend@2.6.1/i18nextHttpBackend.min.js"></script>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+
+    :root {
+      color-scheme: light dark;
+
+      /* Gradients */
+      --primary-gradient: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      --secondary-gradient: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+      --success-gradient: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+      --warning-gradient: linear-gradient(135deg, #fa709a 0%, #fee140 100%);
+      --dark-gradient: linear-gradient(135deg, #0c0c0c 0%, #1a1a2e 100%);
+
+      /* Glass */
+      --glass-bg: rgba(255, 255, 255, 0.1);
+      --glass-border: rgba(255, 255, 255, 0.2);
+
+      /* Shadows */
+      --shadow-main: 0 8px 32px rgba(0, 0, 0, 0.1);
+      --shadow-hover: 0 12px 48px rgba(0, 0, 0, 0.15);
+
+      /* Text */
+      --text-primary: #2d3748;
+      --text-secondary: #4a5568;
+
+      /* Overlay blobs (light) */
+      --blob-a: rgba(120, 119, 198, 0.3);
+      --blob-b: rgba(255, 119, 198, 0.3);
+      --blob-c: rgba(120, 219, 255, 0.3);
+
+      /* Background (light) */
+      --bg-gradient: linear-gradient(-45deg, #ee7752, #e73c7e, #23a6d5, #23d5ab);
+    }
+
+    /* Dark theme variables via data-theme attribute */
+    html[data-theme="dark"], body[data-theme="dark"] {
+      --text-primary: #e2e8f0;
+      --text-secondary: #cbd5e1;
+      --bg-gradient: linear-gradient(-45deg, #0c0c0c, #1a1a2e, #16213e, #0f3460);
+      --glass-bg: rgba(0, 0, 0, 0.3);
+      --glass-border: rgba(255, 255, 255, 0.1);
+      --blob-a: rgba(120, 119, 198, 0.15);
+      --blob-b: rgba(255, 119, 198, 0.10);
+      --blob-c: rgba(120, 219, 255, 0.12);
+    }
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body { min-height: 100%; }
+
+    /* Paint the gradient on html so mobile browsers pick it up */
+    html {
+      background: var(--bg-gradient);
+      background-size: 400% 400%;
+      animation: gradientShift 15s ease infinite;
+    }
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      color: var(--text-primary);
+      overflow-x: hidden;
+      position: relative;
+      background: transparent; /* Let the html background show through */
+      transition: color 0.3s ease;
+    }
+
+    @keyframes gradientShift { 0% { background-position: 0% 50%; } 50% { background-position: 100% 50%; } 100% { background-position: 0% 50%; } }
+
+    /* Force dark gradient when data-theme="dark" is present */
+    html[data-theme="dark"], body[data-theme="dark"], html[data-theme="dark"] body {
+      background: var(--bg-gradient) !important;
+      background-size: 400% 400% !important;
+      color: var(--text-primary) !important;
+    }
+
+    /* Decorative overlay */
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background-image:
+        radial-gradient(circle at 20% 20%, var(--blob-a) 0%, transparent 50%),
+        radial-gradient(circle at 80% 80%, var(--blob-b) 0%, transparent 50%),
+        radial-gradient(circle at 40% 40%, var(--blob-c) 0%, transparent 50%);
+      animation: float 20s ease-in-out infinite;
+      z-index: -1;
+      pointer-events: none;
+    }
+    @keyframes float { 0%, 100% { transform: translateY(0px) rotate(0deg); } 33% { transform: translateY(-20px) rotate(120deg); } 66% { transform: translateY(10px) rotate(240deg); } }
+
+    h1 {
+      text-align: center;
+      font-size: clamp(2rem, 5vw, 3.5rem);
+      font-weight: 700;
+      background: var(--primary-gradient);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      margin: 2rem 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 1rem;
+      text-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+    }
+    h1 img { width: 60px; height: 60px; filter: drop-shadow(0 4px 8px rgba(0,0,0,0.2)); animation: pulse 2s ease-in-out infinite; }
+    @keyframes pulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.05); } }
+
+    .container { max-width: 1200px; margin: 0 auto; padding: 0 1rem; }
+
+    .section {
+      background: var(--glass-bg);
+      backdrop-filter: blur(20px);
+      border: 1px solid var(--glass-border);
+      border-radius: 24px;
+      padding: 2rem;
+      margin: 2rem 0;
+      box-shadow: var(--shadow-main);
+      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+      position: relative;
+      overflow: hidden;
+      animation: fadeInUp 0.6s ease-out;
+    }
+    .section::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 1px; background: linear-gradient(90deg, transparent, rgba(255,255,255,0.4), transparent); }
+    .section:hover { transform: translateY(-4px); box-shadow: var(--shadow-hover); border-color: rgba(255,255,255,0.3); }
+    .section:nth-child(even) { animation-delay: 0.2s; }
+    .section:nth-child(odd) { animation-delay: 0.1s; }
+
+    .warning { background: linear-gradient(135deg, rgba(255,107,107,0.1), rgba(255,142,83,0.1)); border: 1px solid rgba(255,107,107,0.3); backdrop-filter: blur(10px); padding: 1.5rem; border-radius: 16px; margin: 1rem 0; position: relative; overflow: hidden; }
+    .warning::before { content: '⚠️'; position: absolute; top: -10px; right: -10px; font-size: 2rem; opacity: 0.1; }
+
+    button {
+      background: var(--primary-gradient);
+      color: white;
+      border: none;
+      padding: 0.875rem 1.75rem;
+      border-radius: 50px;
+      cursor: pointer;
+      font-weight: 600;
+      font-size: 0.95rem;
+      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+      box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
+      position: relative;
+      overflow: hidden;
+      margin: 0.5rem;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    button::before { content: ''; position: absolute; top: 0; left: -100%; width: 100%; height: 100%; background: linear-gradient(90deg, transparent, rgba(255,255,255,0.2), transparent); transition: left 0.5s; }
+    button:hover::before { left: 100%; }
+    button:hover { transform: translateY(-2px); box-shadow: 0 8px 25px rgba(102, 126, 234, 0.6); }
+    button:active { transform: translateY(0); }
+    button:disabled { background: linear-gradient(135deg, #a0aec0, #718096); cursor: not-allowed; transform: none; box-shadow: none; }
+
+    .copy-btn { background: var(--success-gradient); padding: 0.5rem 1rem; font-size: 0.8rem; box-shadow: 0 4px 15px rgba(79,172,254,0.4); }
+    .reveal-btn { background: var(--warning-gradient); padding: 0.5rem 1rem; font-size: 0.8rem; box-shadow: 0 4px 15px rgba(250,112,154,0.4); }
+
+    .consolidate-button { background: transparent !important; border: 2px solid; border-image: var(--primary-gradient) 1; color: var(--text-primary); backdrop-filter: blur(10px); box-shadow: none; }
+    .consolidate-button:hover { background: rgba(255,255,255,0.1) !important; transform: translateY(-2px); }
+
+    input, select, textarea {
+      width: 100%; padding: 1rem 1.25rem; margin: 0.75rem 0; border: 2px solid var(--glass-border);
+      border-radius: 16px; background: var(--glass-bg); backdrop-filter: blur(10px);
+      color: var(--text-primary); font-size: 1rem; transition: all 0.3s ease; font-family: inherit;
+    }
+    input::placeholder, textarea::placeholder { color: #4a5568; opacity: 0.7; }
+    input:focus, select:focus, textarea:focus { outline: none; border-color: rgba(102,126,234,0.6); box-shadow: 0 0 0 4px rgba(102,126,234,0.1); transform: translateY(-1px); }
+
+    textarea { resize: vertical; min-height: 120px; line-height: 1.6; }
+
+    p, li { color: var(--text-primary); margin: 1rem 0; line-height: 1.6; font-weight: 400; }
+
+    ul { list-style: none; padding: 0; }
+    li { background: var(--glass-bg); backdrop-filter: blur(10px); padding: 1.25rem; margin: 1rem 0; border-radius: 16px; border: 1px solid var(--glass-border); transition: all 0.3s ease; }
+    li:hover { transform: translateX(4px); border-color: rgba(102,126,234,0.3); }
+
+    .tx-hex { font-family: 'Monaco','Menlo','Ubuntu Mono',monospace; font-size: 0.85rem; word-break: break-all; background: var(--glass-bg); backdrop-filter: blur(10px); padding: 1.5rem; border-radius: 16px; margin-top: 1rem; border: 1px solid var(--glass-border); position: relative; }
+    .tx-hex::before { content: '</>'; position: absolute; top: 0.5rem; right: 0.5rem; opacity: 0.3; font-size: 1.2rem; }
+
+    .counter-box { text-align: center; margin: 2rem auto; padding: 2rem; background: var(--glass-bg); backdrop-filter: blur(20px); border-radius: 24px; border: 1px solid var(--glass-border); box-shadow: var(--shadow-main); font-size: 1.2rem; font-weight: 600; position: relative; overflow: hidden; max-width: 400px; }
+    .counter-box::before { content: ''; position: absolute; top: -50%; left: -50%; width: 200%; height: 200%; background: conic-gradient(from 0deg, transparent, rgba(102,126,234,0.1), transparent); animation: rotate 10s linear infinite; z-index: -1; }
+    @keyframes rotate { 100% { transform: rotate(360deg); } }
+
+    .theme-toggle { position: fixed; top: 2rem; right: 2rem; background: var(--glass-bg); backdrop-filter: blur(20px); border: 1px solid var(--glass-border); border-radius: 50%; width: 60px; height: 60px; font-size: 1.5rem; cursor: pointer; z-index: 1000; color: var(--text-primary); transition: all 0.3s ease; display: flex; align-items: center; justify-content: center; }
+    .theme-toggle:hover { transform: rotate(180deg) scale(1.1); box-shadow: 0 8px 25px rgba(0, 0, 0, 0.2); }
+
+    .tabs { display: flex; justify-content: center; gap: 0.5rem; margin: 3rem 0 2rem 0; flex-wrap: wrap; padding: 0.5rem; background: var(--glass-bg); backdrop-filter: blur(20px); border-radius: 50px; border: 1px solid var(--glass-border); max-width: fit-content; margin-left: auto; margin-right: auto; }
+    .tabs button { padding: 1rem 2rem; border-radius: 50px; background: transparent; color: #4a5568; border: none; cursor: pointer; font-weight: 500; transition: all 0.3s cubic-bezier(0.4,0,0.2,1); position: relative; overflow: hidden; text-transform: none; letter-spacing: normal; font-size: 0.95rem; box-shadow: none; margin: 0; }
+    .tabs button.active { background: var(--primary-gradient); color: white; box-shadow: 0 4px 15px rgba(102,126,234,0.4); transform: translateY(-1px); }
+    .tabs button:not(.active):hover { background: rgba(102,126,234,0.1); color: var(--text-primary); }
+
+    .tab-pane { display: none; }
+
+    .message-list { max-height: 400px; overflow-y: auto; margin-top: 1rem; padding: 1rem; background: var(--glass-bg); backdrop-filter: blur(10px); border: 1px solid var(--glass-border); border-radius: 16px; scrollbar-width: thin; scrollbar-color: rgba(102,126,234,0.3) transparent; }
+    .message-list::-webkit-scrollbar { width: 6px; }
+    .message-list::-webkit-scrollbar-track { background: transparent; }
+    .message-list::-webkit-scrollbar-thumb { background: rgba(102,126,234,0.3); border-radius: 3px; }
+
+    .message-item { padding: 1.25rem; margin: 1rem 0; background: var(--glass-bg); backdrop-filter: blur(10px); border-radius: 16px; border-left: 4px solid #2196f3; word-break: break-word; transition: all 0.3s ease; position: relative; }
+    .message-item::before { content: '💌'; position: absolute; top: 0.5rem; right: 0.5rem; opacity: 0.3; }
+    .message-item:hover { transform: translateX(4px); box-shadow: 0 4px 15px rgba(0,0,0,0.1); }
+    .message-item.error { border-left-color: #e57373; background: linear-gradient(135deg, rgba(229,115,115,0.1), rgba(239,83,80,0.1)); }
+    .message-item.error::before { content: '❌'; }
+    .message-item.read { border-left-color: #4caf50; background: linear-gradient(135deg, rgba(76,175,80,0.1), rgba(102,187,106,0.1)); }
+    .message-item.read::before { content: '✅'; }
+
+    .send-form { margin-top: 1rem; padding: 2rem; background: var(--glass-bg); backdrop-filter: blur(20px); border: 1px solid var(--glass-border); border-radius: 20px; display: none; position: relative; overflow: hidden; }
+    .send-form::before { content: ''; position: absolute; top: 0; left: -100%; width: 100%; height: 2px; background: var(--primary-gradient); animation: loading 2s ease-in-out infinite; }
+    @keyframes loading { 0%, 100% { left: -100%; } 50% { left: 100%; } }
+
+    .unread-counter { display: none; background: var(--secondary-gradient); color: white; padding: 1rem 1.5rem; border-radius: 50px; font-size: 1rem; margin-bottom: 1rem; text-align: center; font-weight: 600; box-shadow: 0 4px 15px rgba(240,147,251,0.4); animation: bounce 2s ease-in-out infinite; }
+    @keyframes bounce { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-5px); } }
+
+    #loadingSpinner { display: none; position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 60px; height: 60px; border: 4px solid rgba(255,255,255,0.1); border-top: 4px solid #667eea; border-radius: 50%; animation: spin 1s linear infinite; z-index: 1001; backdrop-filter: blur(10px); }
+    @keyframes spin { 0% { transform: translate(-50%, -50%) rotate(0deg); } 100% { transform: translate(-50%, -50%) rotate(360deg); } }
+
+    .blurred { filter: blur(8px); user-select: none; transition: filter 0.3s ease; }
+    .blurred-input { filter: blur(8px); transition: filter 0.3s ease; }
+
+    .char-counter { font-size: 0.85rem; color: var(--text-secondary); margin-top: 0.5rem; text-align: right; font-weight: 500; }
+    .char-counter.over-limit { color: #e57373; font-weight: 600; }
+
+    .message-status { font-size: 0.8rem; color: var(--text-secondary); margin-top: 0.75rem; font-style: italic; opacity: 0.8; }
+
+    /* Cacher les frais NITO (comme ta version) */
+    #feeNito { display: none !important; }
+    label[data-i18n="send_section.debit_label"] { display: none !important; }
+
+    @media (max-width: 768px) {
+      html, body { zoom: 0.8; }
+      .section { padding: 1.5rem; margin: 1rem 0; }
+      h1 { font-size: 2rem; }
+      .tabs { flex-direction: column; gap: 0.25rem; }
+      .tabs button { padding: 0.75rem 1.5rem; }
+      .theme-toggle { top: 1rem; right: 1rem; width: 50px; height: 50px; }
+    }
+
+    footer { text-align: center; margin-top: 4rem; padding: 3rem 2rem; background: var(--glass-bg); backdrop-filter: blur(20px); border-top: 1px solid var(--glass-border); font-size: 0.95rem; color: var(--text-secondary); position: relative; overflow: hidden; }
+    footer::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 1px; background: linear-gradient(90deg, transparent, rgba(255,255,255,0.4), transparent); }
+    footer a { color: #667eea; text-decoration: none; font-weight: 600; transition: all 0.3s ease; }
+    footer a:hover { text-decoration: underline; color: #5a67d8; text-shadow: 0 2px 4px rgba(102,126,234,0.3); }
+
+    @keyframes fadeInUp { from { opacity: 0; transform: translateY(30px); } to { opacity: 1; transform: translateY(0); } }
+
+    ::-webkit-scrollbar { width: 12px; }
+    ::-webkit-scrollbar-track { background: rgba(255,255,255,0.1); border-radius: 6px; }
+    ::-webkit-scrollbar-thumb { background: var(--primary-gradient); border-radius: 6px; border: 2px solid transparent; background-clip: content-box; }
+    ::-webkit-scrollbar-thumb:hover { background: linear-gradient(135deg, #5a67d8, #6b46c1); background-clip: content-box; }
+
+    #languageSelect { background: var(--glass-bg); backdrop-filter: blur(20px); border: 2px solid var(--glass-border); border-radius: 16px; padding: 1rem; font-size: 1rem; font-weight: 500; color: var(--text-primary); cursor: pointer; transition: all 0.3s ease; }
+    #languageSelect:hover { border-color: rgba(102,126,234,0.4); transform: translateY(-1px); }
+
+    #generateButton { background: var(--success-gradient); box-shadow: 0 4px 15px rgba(79,172,254,0.4); }
+    #importWalletButton { background: var(--warning-gradient); box-shadow: 0 4px 15px rgba(250,112,154,0.4); }
+    #prepareTxButton { background: var(--primary-gradient); box-shadow: 0 4px 15px rgba(102,126,234,0.4); }
+    #broadcastTxButton { background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%); box-shadow: 0 4px 15px rgba(17,153,142,0.4); }
+    #cancelTxButton { background: linear-gradient(135deg, #ff6b6b 0%, #ffa8a8 100%); box-shadow: 0 4px 15px rgba(255,107,107,0.4); }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div id="loadingSpinner"></div>
+    <button id="themeToggle" class="theme-toggle" aria-pressed="false" title="Basculer le thème">🌙</button>
+
+    <div class="section">
+      <label for="languageSelect" data-i18n="language_label">Langue :</label>
+      <select id="languageSelect">
+        <option value="fr" data-i18n="languages.fr">Français</option>
+        <option value="en" data-i18n="languages.en">English</option>
+        <option value="de" data-i18n="languages.de">Deutsch</option>
+        <option value="es" data-i18n="languages.es">Español</option>
+        <option value="nl" data-i18n="languages.nl">Nederlands</option>
+        <option value="ru" data-i18n="languages.ru">Русский</option>
+        <option value="zh" data-i18n="languages.zh">中文</option>
+      </select>
+    </div>
+
+    <h1><img src="https://raw.githubusercontent.com/biigbang0001/wallet-nito/refs/heads/master/nito.png" alt="" />Wallet NITO</h1>
+
+    <div class="counter-box">
+      <span data-i18n="counter.keys_generated">🔑 Clés Nito générées :</span> <span id="keyCounter">0</span>
+    </div>
+
+    <nav id="mainTabs" class="tabs">
+      <button type="button" class="active" data-tab="tab-gen" data-i18n="generate_section.title">🎯 Génération de clé privée Nito</button>
+      <button type="button" data-tab="tab-send" data-i18n="send_section.title">📤 Envoyer NITO</button>
+      <button type="button" data-tab="tab-msg" data-i18n="encrypted_messaging.title">🔐 Messagerie cryptée</button>
+    </nav>
+
+    <div id="tab-gen" class="tab-pane" style="display:block">
+      <div class="section">
+        <h2 data-i18n="generate_section.title">🎯 Génération de clé privée Nito</h2>
+        <button id="generateButton" data-i18n="generate_section.generate_button">🎲 Générer</button>
+        <p><span id="hdMasterKey" class="blurred"></span> <button id="copyHdKey" class="copy-btn" data-i18n="generate_section.copy">📋</button> <button id="revealHdKey" class="reveal-btn" data-i18n="generate_section.reveal">👁️ Révéler</button></p>
+        <p><span id="mnemonicPhrase" class="blurred"></span> <button id="copyMnemonic" class="copy-btn" data-i18n="generate_section.copy">📋</button> <button id="revealMnemonic" class="reveal-btn" data-i18n="generate_section.reveal">👁️ Révéler</button></p>
+        <p><span id="generatedAddress"></span></p>
+        <p class="warning" data-i18n="generate_section.warning"><span id="inactivityTimer">[10:00]</span> ⚠️ Sauvegardez la clé privée immédiatement ! Elle sera effacée après 10 minutes d'inactivité ou après un rechargement de la page.</p>
+      </div>
+
+      <div class="section">
+        <h2 data-i18n="import_section.title">📥 Importer un wallet</h2>
+        <div>
+          <textarea id="privateKeyWIF" placeholder="WIF/Hex/mnémonique HD/XPRV HD" style="width: 100%; height: 80px; resize: vertical;"></textarea>
+          <button id="revealWifInput" class="reveal-btn" data-i18n="generate_section.reveal">👁️ Révéler</button>
+        </div>
+        <button id="importWalletButton" data-i18n="import_section.import_button">📥 Importer</button>
+        <p><span id="walletAddress"></span></p>
+        <p><span data-i18n="import_section.balance">Solde :</span> <span id="walletBalance">0.00000000</span> NITO <button id="refreshBalanceButton" data-i18n="import_section.refresh_button">🔄</button></p>
+      </div>
+    </div>
+
+    <div id="tab-send" class="tab-pane">
+      <div class="section">
+        <h2 data-i18n="send_section.title">📤 Envoyer NITO</h2>
+        <input id="destinationAddress" placeholder="Adresse destinataire" data-i18n="[placeholder]send_section.destination_placeholder" />
+        <input id="amountNito" type="number" step="0.00000001" placeholder="Montant (NITO)" data-i18n="[placeholder]send_section.amount_placeholder" />
+        <button id="maxButton" type="button" class="copy-btn" style="margin-left: 5px; background: #4b5e40;" data-i18n="max_button.text">MAX</button>
+        <input id="feeNito" type="number" step="0.00000001" value="0.0001" placeholder="Frais (NITO)" data-i18n="[placeholder]send_section.fee_placeholder" />
+        <label data-i18n="send_section.debit_label">Adresse à débiter :</label>
+        <select id="debitAddressType">
+          <option value="bech32" selected data-i18n="send_section.bech32_option">Bech32</option>
+          <option value="p2tr">Bech32m (Taproot)</option>
+        </select>
+        <p>
+          <span data-i18n="import_section.balance">Solde :</span>
+          <span id="sendTabBalance">0.00000000</span> NITO
+          <button id="refreshSendTabBalance" type="button" class="copy-btn" data-i18n="import_section.refresh_button">🔄</button>
+        </p>
+        <button id="prepareTxButton" data-i18n="send_section.prepare_button">🔍 Préparer</button>
+        <button id="broadcastTxButton" data-i18n="send_section.broadcast_button">✅ Diffuser transaction</button>
+        <button id="cancelTxButton" data-i18n="send_section.cancel_button">❌ Annuler</button>
+        <div class="consolidate-container"></div>
+        <div id="txHexContainer" class="tx-hex" style="display:none">
+          <p data-i18n="send_section.signed_tx">Transaction signée (hex) :</p>
+          <span id="signedTx"></span>
+          <button id="copyTxHex" class="copy-btn" data-i18n="send_section.copy_tx">📋 Copier</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="tab-msg" class="tab-pane">
+      <div class="section">
+        <h2 data-i18n="encrypted_messaging.title">🔐 Messagerie cryptée</h2>
+        <button id="publishPubkeyButton" data-i18n="encrypted_messaging.publish_pubkey">🔑 Publier ma clé publique</button>
+        <p style="font-size: 14px; color: #666; margin-top: 5px;">📋 <span data-i18n="encrypted_messaging.publish_info">Publiez votre clé publique une fois pour permettre aux autres de vous envoyer des messages cryptés.</span></p>
+        <hr style="margin: 20px 0; border: none; border-top: 1px solid var(--glass-border);" />
+        <h3 data-i18n="encrypted_messaging.write_title">✏️ Écrire un message</h3>
+        <textarea id="messageInput" maxlength="50000" placeholder="Votre message (max 50000 caractères)" data-i18n="[placeholder]encrypted_messaging.message_placeholder"></textarea>
+        <p id="messageCharCounter" class="char-counter">0/50000</p>
+        <div style="margin-top: 10px;">
+          <button id="sendMessageButton" data-i18n="encrypted_messaging.send_button">📤 Envoyer</button>
+          <button id="clearMessageButton" data-i18n="encrypted_messaging.clear_button">🗑️ Effacer</button>
+        </div>
+      </div>
+
+      <div id="sendMessageForm" class="send-form">
+        <h4 data-i18n="messaging_recipient_title">📧 Destinataire du message</h4>
+        <input id="recipientAddress" placeholder="Adresse bech32 du destinataire (nito1...)" data-i18n="[placeholder]encrypted_messaging.recipient_placeholder" />
+        <p id="sendMessageCost" class="char-counter" data-i18n="messaging_estimated_cost">Coût estimé: 0.0001 NITO (1 transaction)</p>
+        <div style="margin-top: 10px;">
+          <button id="confirmSendButton" data-i18n="encrypted_messaging.validate_button">✅ Confirmer l'envoi</button>
+          <button id="cancelSendButton" data-i18n="encrypted_messaging.cancel_button">❌ Annuler</button>
+        </div>
+      </div>
+
+      <hr style="margin: 20px 0; border: none; border-top: 1px solid var(--glass-border);" />
+
+      <div class="section">
+        <h3 data-i18n="encrypted_messaging.read_title">📬 Lire les messages</h3>
+        <button id="refreshMessagesButton" data-i18n="encrypted_messaging.refresh_messages">🔄 Actualiser les messages</button>
+        <div id="unreadMessages" class="unread-counter"><span id="unreadCount">0</span> 📧 <span data-i18n="encrypted_messaging.unread_messages">messages non lus</span></div>
+        <div id="messageList" class="message-list" style="display: none;">
+          <div class="message-item">Aucun message reçu</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Zoom helper for mobile -->
+  <script>
+    const isMobile = /Mobi|Android|iPhone|iPad|iPod|Opera Mini|IEMobile|WPDesktop/.test(navigator.userAgent);
+    if (isMobile) {
+      let lastScale = 1; let isZooming = false;
+      document.addEventListener('touchstart', (e) => { if (e.touches.length === 2) isZooming = true; });
+      document.addEventListener('touchend', () => { isZooming = false; setTimeout(resetZoom, 300); });
+      function resetZoom() {
+        document.body.style.zoom = '0.8';
+        const viewport = document.querySelector('meta[name="viewport"]');
+        viewport && viewport.setAttribute('content', 'width=device-width, initial-scale=0.8, user-scalable=yes');
+      }
+      window.addEventListener('resize', () => { if (!isZooming) resetZoom(); });
+      setInterval(() => {
+        if (!isZooming) {
+          const currentScale = window.visualViewport ? window.visualViewport.scale : 1;
+          if (currentScale !== lastScale) { lastScale = currentScale; resetZoom(); }
+        }
+      }, 500);
+    }
+  </script>
+
+  <!-- Theme toggle using data-theme attribute -->
+  <script>
+    (function(){
+      const toggleBtn = document.getElementById('themeToggle');
+      const root = document.documentElement;
+      const body = document.body;
+
+      root.classList.remove('dark-mode','light-mode');
+      body.classList.remove('dark-mode','light-mode');
+
+      function currentPref() {
+        const saved = localStorage.getItem('theme');
+        if (saved === 'light' || saved === 'dark') return saved;
+        return matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+      }
+
+      function applyTheme(theme, fromUser = false){
+        root.setAttribute('data-theme', theme);
+        body.setAttribute('data-theme', theme);
+        document.querySelector('meta[name="theme-color"]').setAttribute('content', theme === 'dark' ? '#0c0c0c' : '#ffffff');
+        toggleBtn.setAttribute('aria-pressed', String(theme === 'dark'));
+        toggleBtn.textContent = theme === 'dark' ? '☀️' : '🌙';
+        if (fromUser) localStorage.setItem('theme', theme);
+      }
+
+      applyTheme(currentPref());
+      toggleBtn.addEventListener('click', () => {
+        const next = (root.getAttribute('data-theme') === 'dark') ? 'light' : 'dark';
+        applyTheme(next, true);
+      });
+      matchMedia('(prefers-color-scheme: dark)').addEventListener('change', (e) => {
+        if (!localStorage.getItem('theme')) applyTheme(e.matches ? 'dark' : 'light');
+      });
+    })();
+  </script>
+
+  <!-- Tabs + small helpers -->
+  <script>
+    (function(){
+      const tabs = document.querySelectorAll('#mainTabs button');
+      function showTab(id){
+        document.querySelectorAll('.tab-pane').forEach(p => { p.style.display = (p.id === id) ? 'block' : 'none'; });
+        tabs.forEach(b => b.classList.toggle('active', b.dataset.tab === id));
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+      }
+      tabs.forEach(btn => btn.addEventListener('click', () => {
+        const target = btn.dataset.tab;
+        const needsImport = (target === 'tab-send' || target === 'tab-msg');
+        const isImported = !!(window.walletKeyPair);
+        if (needsImport && !isImported) {
+          if (window.i18next && i18next.t) { alert(i18next.t('errors.import_first')); }
+          else { alert("Veuillez importer un wallet d'abord."); }
+          showTab('tab-gen');
+          return;
+        }
+        showTab(target);
+      }));
+      window.__NITOShowTab = showTab;
+    })();
+  </script>
+
+  <!-- Balance refresher for NITO (bech32/p2tr) -->
+  <script>
+    (function(){
+      async function updateSendTabBalance(){
+        try {
+          const sel = document.getElementById('debitAddressType');
+          const out = document.getElementById('sendTabBalance');
+          if (!sel || !out) return;
+          const val = sel.value;
+          const addr = (val === 'p2tr') ? (window.taprootAddress || '') : (window.bech32Address || '');
+          if (!addr) { out.textContent = '0.00000000'; return; }
+          const amt = await window.balance(addr);
+          out.textContent = (amt || 0).toFixed(8);
+        } catch(e){ console.error('updateSendTabBalance error:', e); }
+      }
+      window.updateSendTabBalance = updateSendTabBalance;
+      document.addEventListener('change', (ev) => { if (ev.target && ev.target.id === 'debitAddressType') updateSendTabBalance(); });
+      document.addEventListener('click', (ev) => { if (ev.target && ev.target.id === 'refreshSendTabBalance') updateSendTabBalance(); });
+      const sendTabButton = document.querySelector('#mainTabs button[data-tab="tab-send"]');
+      if (sendTabButton) sendTabButton.addEventListener('click', () => setTimeout(updateSendTabBalance, 0));
+      setTimeout(updateSendTabBalance, 300);
+    })();
+  </script>
+
+  <script type="module" src="./wallet.js"></script>
+
+  <footer>
+    <div style="margin-bottom: 10px;">🔓 <span data-i18n="footer.open_source">Ce projet est open source</span> -
+      <a href="https://github.com/biigbang0001/wallet-nito" target="_blank"><span data-i18n="footer.view_code">Voir le code sur GitHub</span> 📖</a>
+    </div>
+    <div>🌐 <span data-i18n="footer.official_site">Site officiel NITO</span> - <a href="https://nito.network/" target="_blank">nito.network 🚀</a></div>
+  </footer>
+</body>
+</html>
