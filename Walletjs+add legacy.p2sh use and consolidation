@@ -292,7 +292,7 @@ function deriveHdChunk(family, start, count) {
   if (!hdWallet) throw new Error('HD wallet not initialized');
   const byScriptHex = {};
   const descriptors = [];
-  const network = _NETWORK;
+  const network = NITO_NETWORK;
 
   if (family === 'bech32') {
     const account = hdWallet.derivePath("m/84'/0'/0'");
@@ -1280,9 +1280,9 @@ async function signTxWithPSBT(to, amt, isConsolidation = false) {
 
 async function getExplorerUrl(txid) {
   const primaryUrl = `https://explorer.nito.network/tx/${txid}`;
-  const fallbackUrl = `https://explorer.nito.network/tx/${txid}`;
+  const fallbackUrl = `https://nitoexplorer.org/tx/${txid}`;
   try {
-    const res = await fetch('https://explorer.nito.network/', { method: 'HEAD', mode: 'cors' });
+    const res = await fetch('https://explorer.nito.network', { method: 'HEAD', mode: 'cors' });
     if (res.ok) return primaryUrl;
     console.log('Primary explorer unavailable, using fallback');
     return fallbackUrl;
@@ -1294,7 +1294,7 @@ async function getExplorerUrl(txid) {
 
 async function checkTransactionConfirmation(txid) {
   const primaryApi = `https://explorer.nito.network/ext/gettx/${txid}`;
-  const fallbackApi = `https://explorer.nito.network/ext/gettx/${txid}`;
+  const fallbackApi = `https://nitoexplorer.org/ext/gettx/${txid}`;
   try {
     const res = await fetch(primaryApi);
     if (res.ok) {
