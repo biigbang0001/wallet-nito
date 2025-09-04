@@ -559,10 +559,9 @@ async function filterOpReturnUtxos(utxos) {
 }
 
 async function showSuccessPopup(txid) {
-  try { if (typeof updateLastActionTime === 'function') updateLastActionTime(); } catch(_) {}
   const body = document.body;
-  const explorerUrl = `https://explorer.nito.network/tx/${txid}`;
-
+  let progress = 0;
+  const explorerUrl = await getExplorerUrl(txid);
   const popup = document.createElement('div');
   popup.className = 'popup';
   popup.style.position = 'fixed';
@@ -574,27 +573,41 @@ async function showSuccessPopup(txid) {
   popup.style.border = '1px solid black';
   popup.style.zIndex = '1000';
   popup.style.color = body.classList.contains('dark-mode') ? '#e0e0e0' : '#1e3a8a';
-
   popup.innerHTML = DOMPurify.sanitize(`
     <p>${i18next.t('popup.success.message')}</p>
-    <p>${i18next.t('popup.success.txid')} <a href="${explorerUrl}" target="_blank" rel="noopener noreferrer">${txid}</a></p>
+    <p>${i18next.t('popup.success.progress')} <span id="progress"></span>%</p>
+    <p>${i18next.t('popup.success.txid')} <span id="txidLink">${txid}</span></p>
     <button id="closeSuccessPopup">${i18next.t('popup.success.close')}</button>
   `);
-
-  const anchor = popup.querySelector('a[href^="https://explorer.nito.network/tx/"]');
-  if (anchor) {
-    anchor.addEventListener('click', function(e){
-      try { e.preventDefault(); e.stopPropagation(); } catch(_) {}
-      try { window.open(anchor.href, '_blank', 'noopener,noreferrer'); } catch(_) {}
-      return false;
-    }, { capture: true });
-  }
-
   document.body.appendChild(popup);
 
+  const progressSpan = popup.querySelector('#progress');
+  const txidLinkSpan = popup.querySelector('#txidLink');
   const closeButton = document.getElementById('closeSuccessPopup');
-  if (closeButton) closeButton.onclick = () => document.body.removeChild(popup);
+
+  const updateProgress = async () => {
+    if (progress < 100) {
+      progress = Math.min(progress + 1.67, 100);
+      progressSpan.textContent = Math.round(progress);
+      try {
+        const confirmed = await checkTransactionConfirmation(txid);
+        if (confirmed) {
+          progress = 100;
+          progressSpan.textContent = progress;
+          txidLinkSpan.innerHTML = `<a href="${explorerUrl}" target="_blank" rel="noopener noreferrer">${txid}</a>`;
+        } else {
+          setTimeout(updateProgress, 10000);
+        }
+      } catch {
+        setTimeout(updateProgress, 10000);
+      }
+    }
+  };
+
+  updateProgress();
+  closeButton.onclick = () => document.body.removeChild(popup);
 }
+
 
 function showLoadingSpinner() {
   const spinner = document.getElementById('loadingSpinner');
