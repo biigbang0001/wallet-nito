@@ -914,12 +914,17 @@ class NitoMessaging {
               }
               sortedChunks.push(messageData.chunks.get(i));
             }
-
             const encryptedMessage = sortedChunks.join('');
             console.log(`🔗 Message ${messageId} reconstitué, taille: ${encryptedMessage.length}`);
 
+            try {
+              const __env = JSON.parse(encryptedMessage);
+              if (__env && __env.recipient && __env.recipient !== walletData.bech32Address) {
+                console.log(`ℹ️ Message ${messageId} ignoré (destiné à ${__env.recipient})`);
+                continue;
+              }
+            } catch (e) {}
             const decryptedMessage = await this.decryptMessage(encryptedMessage, messageData.senderAddress);
-
             completeMessages.push({
               id: messageId,
               content: decryptedMessage.content,
@@ -931,6 +936,10 @@ class NitoMessaging {
             });
 
           } catch (error) {
+            if (error && error.message && /destiné/.test(error.message)) {
+              console.log(`ℹ️ Message ${messageId} ignoré (non destiné à ${walletData.bech32Address}).`);
+              continue;
+            }
             console.error(`❌ Erreur déchiffrement message ${messageId}:`, error);
 
             let errorType = "Erreur de déchiffrement";
@@ -1001,7 +1010,7 @@ class NitoMessaging {
     const scan = await window.rpc("scantxoutset", ["start", [`addr(${address})`]]);
 
     if (scan.unspents) {
-      // Correctif 1: ne plus filtrer par le montant ici
+
       console.log(`📊 UTXOs (tous montants): ${scan.unspents.length}`);
     }
 
@@ -1081,7 +1090,7 @@ class NitoMessaging {
     }
 
     
-    /* Correctif 2: Inclure les transactions du mempool (non confirmées) */
+    
     try {
       const mempoolTxids = await window.rpc("getrawmempool", [false]);
       const MAX_MEMPOOL = 500; // limite pour éviter un scan trop lourd
