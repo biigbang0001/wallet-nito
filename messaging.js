@@ -453,10 +453,11 @@ class NitoMessaging {
   const preparationFeesInSatoshis = Math.round(estimatedTxSize * (feeRate * 1e8) / 1000);
   const preparationFeeRate = preparationFeesInSatoshis / 1e8;
 
-  console.log(`💰 Fees calculés: ${preparationFeesInSatoshis} satoshis (${preparationFeeRate.toFixed(8)} NITO)`);
+  console.log(`💰 Frais préparation split: ${preparationFeesInSatoshis} satoshis (${preparationFeeRate.toFixed(8)} NITO)`);
 const perChunkVBytes = 250;
 const perChunkFeesSat = Math.ceil(perChunkVBytes * ((feeRate * 1e8) / 1000));
 const perChunkFeesCoin = perChunkFeesSat / 1e8;
+  console.log(`🧩 Frais estimés par chunk: ${perChunkFeesSat} satoshis (${perChunkFeesCoin.toFixed(8)} NITO)`);
 const amountPerUtxo = (MESSAGING_CONFIG.MESSAGE_FEE + perChunkFeesCoin) * 1.2;
 console.log(`💰 UTXOs adaptatifs: ${amountPerUtxo.toFixed(8)} NITO`);
   const totalNeeded = chunksNeeded * amountPerUtxo;
