@@ -681,8 +681,11 @@ async sendMessage(message, recipientBech32Address) {
       const tagged = await Promise.all(candidates.map(async u => ({ u, inbound: await this.isInboundMessageUtxo(u) })));
       availableUtxos = tagged.filter(t => !t.inbound).map(t => t.u);
       if (availableUtxos.length < chunks.length) {
-        console.log(`⚠️ Préparation de ${chunks.length} UTXOs optimisés...`);
-        await this.prepareUtxosForMessage(chunks.length);
+
+              const missingCount = Math.max(0, chunks.length - availableUtxos.length);
+      console.log(`⚠️ Préparation de ${missingCount} UTXOs optimisés manquants...`);
+      await this.prepareUtxosForMessage(missingCount);
+
 
         // Recharger les UTXOs après préparation
         await this.delay(2000);
