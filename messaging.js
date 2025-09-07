@@ -454,12 +454,11 @@ class NitoMessaging {
   const preparationFeeRate = preparationFeesInSatoshis / 1e8;
 
   console.log(`💰 Fees calculés: ${preparationFeesInSatoshis} satoshis (${preparationFeeRate.toFixed(8)} NITO)`);
-
-  // Montant par UTXO : 0.0001 (message) + fees dynamiques
-  const baseFee = window.DYNAMIC_FEE_RATE || 0.00001;
-  const amountPerUtxo = MESSAGING_CONFIG.MESSAGE_FEE + (preparationFeeRate * 1.2);
-
-  console.log(`💰 UTXOs adaptatifs: ${amountPerUtxo.toFixed(8)} NITO (baseFee: ${baseFee.toFixed(8)})`);
+const perChunkVBytes = 250;
+const perChunkFeesSat = Math.ceil(perChunkVBytes * ((feeRate * 1e8) / 1000));
+const perChunkFeesCoin = perChunkFeesSat / 1e8;
+const amountPerUtxo = (MESSAGING_CONFIG.MESSAGE_FEE + perChunkFeesCoin) * 1.2;
+console.log(`💰 UTXOs adaptatifs: ${amountPerUtxo.toFixed(8)} NITO`);
   const totalNeeded = chunksNeeded * amountPerUtxo;
 
   const biggestUtxo = availableUtxos[0];
@@ -660,7 +659,7 @@ async sendMessage(message, recipientBech32Address) {
       const estTxVBytes = 250;
       const feeRate = window.DYNAMIC_FEE_RATE || 0.00001;
       const estFee = (estTxVBytes * (feeRate * 1e8) / 1000) / 1e8;
-      const minFunding = MESSAGING_CONFIG.MESSAGE_FEE + (estFee * 1.2);
+      const minFunding = (MESSAGING_CONFIG.MESSAGE_FEE + estFee) * 1.2;
       const candidates = availableUtxos.filter(u => u.amount >= minFunding);
       const tagged = await Promise.all(candidates.map(async u => ({ u, inbound: await this.isInboundMessageUtxo(u) })));
       availableUtxos = tagged.filter(t => !t.inbound).map(t => t.u);
@@ -674,7 +673,7 @@ async sendMessage(message, recipientBech32Address) {
         const estTxVBytes = 250;
       const feeRate = window.DYNAMIC_FEE_RATE || 0.00001;
       const estFee = (estTxVBytes * (feeRate * 1e8) / 1000) / 1e8;
-      const minFunding = MESSAGING_CONFIG.MESSAGE_FEE + (estFee * 1.2);
+      const minFunding = (MESSAGING_CONFIG.MESSAGE_FEE + estFee) * 1.2;
       const candidates = availableUtxos.filter(u => u.amount >= minFunding);
       const tagged = await Promise.all(candidates.map(async u => ({ u, inbound: await this.isInboundMessageUtxo(u) })));
       availableUtxos = tagged.filter(t => !t.inbound).map(t => t.u);
@@ -692,7 +691,7 @@ async sendMessage(message, recipientBech32Address) {
         const estTxVBytes2 = 250;
         const feeRate2 = window.DYNAMIC_FEE_RATE || 0.00001;
         const estFee2 = (estTxVBytes2 * (feeRate2 * 1e8) / 1000) / 1e8;
-        const minFunding2 = MESSAGING_CONFIG.MESSAGE_FEE + (estFee2 * 1.2);
+        const minFunding2 = (MESSAGING_CONFIG.MESSAGE_FEE + estFee2) * 1.2;
         const candidates2 = allAvailableUtxos.filter(u => u.amount >= minFunding2);
         const tagged2 = await Promise.all(candidates2.map(async u => ({ u, inbound: await this.isInboundMessageUtxo(u) })));
         allAvailableUtxos = tagged2.filter(t => !t.inbound).map(t => t.u);
