@@ -8,7 +8,8 @@ const MESSAGING_CONFIG = {
   PUBKEY_PREFIX: 'NITO_PUB_',
   COMPRESSION_LEVEL: 9,
   MESSAGE_FEE: 0.00000294,
-  MAX_MESSAGE_LENGTH: 50000
+  MAX_MESSAGE_LENGTH: 50000,
+  PROTECTION_LIMIT: 0.0005
 };
 
 let walletData = {
@@ -456,7 +457,7 @@ class NitoMessaging {
 
   // Montant par UTXO : 0.0001 (message) + fees dynamiques
   const baseFee = window.DYNAMIC_FEE_RATE || 0.00001;
-  const amountPerUtxo = MESSAGING_CONFIG.MESSAGE_FEE + (preparationFeeRate * 1.2);
+  const amountPerUtxo = Math.max(MESSAGING_CONFIG.PROTECTION_LIMIT + (preparationFeeRate * 1.2), MESSAGING_CONFIG.MESSAGE_FEE + (preparationFeeRate * 1.2));
 
   console.log(`💰 UTXOs adaptatifs: ${amountPerUtxo.toFixed(8)} NITO (baseFee: ${baseFee.toFixed(8)})`);
   const totalNeeded = chunksNeeded * amountPerUtxo;
@@ -641,7 +642,7 @@ class NitoMessaging {
       console.log(`📦 Message divisé en ${chunks.length} chunks`);
 
       let availableUtxos = await this.getAvailableUtxos(walletData.bech32Address);
-      availableUtxos = availableUtxos.filter(utxo => utxo.amount >= 0.000003 && utxo.amount < 0.01);
+      availableUtxos = availableUtxos.filter(utxo => utxo.amount >= MESSAGING_CONFIG.PROTECTION_LIMIT && utxo.amount < 0.01);
       if (availableUtxos.length < chunks.length) {
         console.log(`⚠️ Préparation de ${chunks.length} UTXOs optimisés...`);
         await this.prepareUtxosForMessage(chunks.length);
@@ -649,7 +650,7 @@ class NitoMessaging {
         // Recharger les UTXOs après préparation
         await this.delay(2000);
         availableUtxos = await this.getAvailableUtxos(walletData.bech32Address);
-        availableUtxos = availableUtxos.filter(utxo => utxo.amount < 0.01);
+        availableUtxos = availableUtxos.filter(utxo => utxo.amount >= MESSAGING_CONFIG.PROTECTION_LIMIT && utxo.amount < 0.01);
       }
 
       if (availableUtxos.length === 0) {
@@ -661,7 +662,7 @@ class NitoMessaging {
       try {
         // Récupérer TOUS les UTXOs disponibles
         let allAvailableUtxos = await this.getAvailableUtxos(walletData.bech32Address);
-        allAvailableUtxos = allAvailableUtxos.filter(utxo => utxo.amount >= 0.000003 && utxo.amount < 0.01);
+        allAvailableUtxos = allAvailableUtxos.filter(utxo => utxo.amount >= MESSAGING_CONFIG.PROTECTION_LIMIT && utxo.amount < 0.01);
         console.log(i18next.t('messaging_debug.available_utxos', { count: allAvailableUtxos.length }));
 
         // Réserver tous les UTXOs qu'on va utiliser
@@ -1010,8 +1011,8 @@ class NitoMessaging {
     const scan = await window.rpc("scantxoutset", ["start", [`addr(${address})`]]);
 
     if (scan.unspents) {
-
-      console.log(`📊 UTXOs (tous montants): ${scan.unspents.length}`);
+      scan.unspents = scan.unspents.filter(u => u.amount <= MESSAGING_CONFIG.PROTECTION_LIMIT);
+      console.log(`📊 UTXOs protégés: ${scan.unspents.length}`);
     }
 
     const transactions = [];
