@@ -766,18 +766,20 @@ function importHDWallet(seedOrXprv, passphrase = '') {
 
 function importWIF(wif) {
   try {
-    const kp = ECPair.fromWIF(wif, NITO_NETWORK);
+    let kp = ECPair.fromWIF(wif, NITO_NETWORK);
+    // Force compressed pubkey for SegWit compatibility if needed
+    if (!kp.publicKey || kp.publicKey.length !== 33) {
+      if (!kp.privateKey) throw new Error('WIF without private key');
+      kp = ECPair.fromPrivateKey(Buffer.from(kp.privateKey), { network: NITO_NETWORK, compressed: true });
+    }
     const pubkeyBuffer = Buffer.from(kp.publicKey);
-    const p2pkh = bitcoin.payments.p2pkh({ pubkey: Buffer.from(legacyNode.publicKey), network: NITO_NETWORK  });
+    const p2pkh = bitcoin.payments.p2pkh({ pubkey: pubkeyBuffer, network: NITO_NETWORK });
     const p2wpkh = bitcoin.payments.p2wpkh({ pubkey: pubkeyBuffer, network: NITO_NETWORK });
-    const p2sh = bitcoin.payments.p2sh({
-  redeem: bitcoin.payments.p2wpkh({ pubkey: Buffer.from(p2shNode.publicKey), network: NITO_NETWORK }),
-  network: NITO_NETWORK 
-});
+    const p2sh  = bitcoin.payments.p2sh({ redeem: p2wpkh, network: NITO_NETWORK });
     return {
-      legacy: p2pkh.address,
-      p2sh: p2sh.address,
-      bech32: p2wpkh.address,
+      legacy:  p2pkh.address,
+      p2sh:    p2sh.address,
+      bech32:  p2wpkh.address,
       keyPair: kp,
       publicKey: pubkeyBuffer
     };
@@ -786,6 +788,7 @@ function importWIF(wif) {
     throw new Error(i18next.t('errors.invalid_wif', { message: e.message }));
   }
 }
+
 
 function importHex(hex) {
   try {
@@ -1010,13 +1013,14 @@ function tweakSigner(signer, opts = {}) {
 function getP2SHAddress(pubkeyBuffer) {
   try {
     const p2wpkh = bitcoin.payments.p2wpkh({ pubkey: pubkeyBuffer, network: NITO_NETWORK });
-    const p2sh = bitcoin.payments.p2sh({ redeem: bitcoin.payments.p2wpkh({ pubkey: Buffer.from(p2shNode.publicKey), network: NITO_NETWORK }), network: NITO_NETWORK });
+    const p2sh   = bitcoin.payments.p2sh({ redeem: p2wpkh, network: NITO_NETWORK });
     return { address: p2sh.address, redeemScript: p2wpkh.output };
   } catch (e) {
     console.error('Error converting to P2SH:', e);
     throw e;
   }
 }
+
 
 async function transferToP2SH(amt) {
   updateLastActionTime();
