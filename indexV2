@@ -328,11 +328,11 @@
         
         <!-- Formulaire Email/Password -->
         <div id="emailForm" class="auth-form active">
-          <div id="emailInputs">
-            <input id="emailInput" type="email" placeholder="email@domain.com" autocomplete="username" />
-            <input id="passwordInput" type="password" placeholder="Mot de passe" autocomplete="current-password" />
-          </div>
-          <button id="connectEmailButton" data-i18n="import_section.import_button">🔐 Se connecter</button>
+          <form id="emailInputs" autocomplete="off" onsubmit="return false" novalidate>
+            <input id="emailInput" type="email" placeholder="email@domain.com" autocomplete="username" autocapitalize="none" autocorrect="off" spellcheck="false">
+            <input id="passwordInput" type="password" placeholder="Mot de passe" autocomplete="new-password" name="nito-pass" autocapitalize="none" autocorrect="off" spellcheck="false">
+          </form>
+          <button id="connectEmailButton" data-i18n="import_section.import_button" type="button">🔐 Se connecter</button>
           <button id="emailSeedButton" class="copy-btn" style="display:none;" data-i18n="chat.copy_seed">🔑 Copier la phrase mnémotechnique</button>
           <p style="font-size: 14px; color: var(--text-secondary); margin-top: 10px;">
             📋 Local: une phrase mnémotechnique BIP39 est dérivée de votre email+mot de passe (BIP84/bech32).
@@ -680,6 +680,11 @@
                       console.log(`Vérification ${attempts}: walletKeyPair=${!!window.walletKeyPair}, bech32Address=${!!window.bech32Address}`);
                       
                       if (window.walletKeyPair && window.bech32Address) {
+    try {
+      var privateKeyWIF = document.getElementById('privateKeyWIF');
+      if (privateKeyWIF) { privateKeyWIF.value = ''; privateKeyWIF.setAttribute('value',''); }
+    } catch(e){} 
+    
                         clearInterval(checkWallet);
                         
                         // Masquer les champs de saisie, le bouton de connexion et l'onglet clé
@@ -816,5 +821,28 @@
     </div>
     <div>🌐 <span data-i18n="footer.official_site">Site officiel NITO</span> - <a href="https://nito.network/" target="_blank">nito.network 🚀</a></div>
   </footer>
+
+<!-- Injected by fix: clear sensitive fields on bfcache events -->
+<script>
+(function(){
+  function safeCall(fnName){
+    try { if (typeof window[fnName] === 'function') window[fnName](); } catch(e){}
+  }
+  window.addEventListener('pagehide', function(){
+    safeCall('clearSensitiveFields');
+    try { if (typeof window !== 'undefined') window.currentMnemonic = null; } catch(e){}
+  });
+  window.addEventListener('pageshow', function(){
+    safeCall('clearSensitiveFields');
+    safeCall('resetInterface');
+  });
+  document.addEventListener('DOMContentLoaded', function(){
+    setTimeout(function(){ safeCall('clearSensitiveFields'); }, 0);
+    if (typeof requestAnimationFrame === 'function') {
+      requestAnimationFrame(function(){ safeCall('clearSensitiveFields'); });
+    }
+  });
+})();
+</script>
 </body>
 </html>
