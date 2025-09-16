@@ -486,13 +486,13 @@ console.log(`💰 UTXOs adaptatifs: ${amountPerUtxo.toFixed(8)} NITO`);
   console.log(`💰 Création de ${chunksNeeded} UTXOs de ${amountPerUtxo} NITO chacun`);
 
   // Créer une transaction qui split le gros UTXO en plein de petits
-  const splitPsbt = new bitcoin.Psbt({ network: this.getNetworkConfig() });
-  splitPsbt.setVersion(2);
+  const psbt = new bitcoin.Psbt({ network: this.getNetworkConfig() });
+  psbt.setVersion(2);
 
   const scriptBuffer = Buffer.from(biggestUtxo.scriptPubKey, 'hex');
   const total = Math.round(biggestUtxo.amount * 1e8);
 
-  splitPsbt.addInput({
+  psbt.addInput({
     hash: biggestUtxo.txid,
     index: biggestUtxo.vout,
     witnessUtxo: { script: scriptBuffer, value: total }
@@ -501,7 +501,7 @@ console.log(`💰 UTXOs adaptatifs: ${amountPerUtxo.toFixed(8)} NITO`);
   // Créer tous les petits outputs
   const outputAmount = Math.round(amountPerUtxo * 1e8);
   for (let i = 0; i < chunksNeeded; i++) {
-    splitPsbt.addOutput({ address: walletData.bech32Address, value: outputAmount });
+    psbt.addOutput({ address: walletData.bech32Address, value: outputAmount });
   }
 
   // Change restant
@@ -510,7 +510,7 @@ console.log(`💰 UTXOs adaptatifs: ${amountPerUtxo.toFixed(8)} NITO`);
   const change = total - usedAmount - fees;
 
   if (change > 294) {
-    splitPsbt.addOutput({ address: walletData.bech32Address, value: change });
+    psbt.addOutput({ address: walletData.bech32Address, value: change });
   }
 
   const signer = {
@@ -520,10 +520,10 @@ console.log(`💰 UTXOs adaptatifs: ${amountPerUtxo.toFixed(8)} NITO`);
     sign: (hash) => Buffer.from(walletData.keyPair.sign(hash))
   };
 
-  splitPsbt.signInput(0, signer, [bitcoin.Transaction.SIGHASH_ALL]);
-  splitPsbt.finalizeAllInputs();
+  psbt.signInput(0, signer, [bitcoin.Transaction.SIGHASH_ALL]);
+  psbt.finalizeAllInputs();
 
-  const tx = splitPsbt.extractTransaction();
+  const tx = psbt.extractTransaction();
   const txid = await window.rpc('sendrawtransaction', [tx.toHex()]);
 
   console.log(`✅ UTXOs préparés, TXID: ${txid}`);
