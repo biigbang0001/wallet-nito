@@ -226,5 +226,17 @@
     "batch_pause": "⏸️ 批次间暂停 3 秒...",
     "sending_complete": "🎉 发送完成：{{successful}}/{{total}} 分片成功",
     "failed_chunks": "❌ 失败的分片："
+  },
+  "chat": {
+    "new_conversation": "➕ 新建会话",
+    "delete_conversation": "🗑️ 删除会话",
+    "delete_all_messages": "🗑️ 删除所有消息",
+    "refresh_balance": "🔄 刷新余额",
+    "copy_seed": "🔑 复制种子",
+    "profile": "个人资料",
+    "address": "地址",
+    "actions": "操作",
+    "conversations": "会话",
+    "messaging_estimated_cost_detailed": "预计费用：{{cost}} NITO（{{chunks}} 笔交易）"
   }
 }
