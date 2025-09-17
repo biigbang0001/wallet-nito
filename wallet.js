@@ -10,6 +10,7 @@ import * as bip39 from 'https://esm.sh/bip39@3.1.0';
 import bip32Factory from 'https://esm.sh/bip32@4.0.0';
 window.Buffer = Buffer;
 
+const RPC_DEBUG = false;
 const bip32 = bip32Factory(ecc);
 
 
@@ -475,7 +476,7 @@ async function rpc(method, params) {
           body: JSON.stringify({ jsonrpc: '2.0', method, params, id: Date.now() })
         });
         const text = await res.text();
-        if (method !== 'getnetworkinfo' && method !== 'estimatesmartfee') console.log('RPC raw response:', text);
+        if (method !== 'getnetworkinfo' && method !== 'estimatesmartfee') if (RPC_DEBUG) console.log('RPC raw response:', text);
         if (!res.ok) throw new Error(`HTTP Error: ${res.status} - ${text}`);
         const data = JSON.parse(text);
         if (data.error) throw new Error(data.error.message);
@@ -499,7 +500,7 @@ async function rpc(method, params) {
         body: JSON.stringify({ jsonrpc: '2.0', method, params, id: Date.now() })
       });
       const text = await res.text();
-        if (method !== 'getnetworkinfo' && method !== 'estimatesmartfee') console.log('RPC raw response:', text);
+        if (method !== 'getnetworkinfo' && method !== 'estimatesmartfee') if (RPC_DEBUG) console.log('RPC raw response:', text);
       if (!res.ok) throw new Error(`HTTP Error: ${res.status} - ${text}`);
       const data = JSON.parse(text);
       if (data.error) throw new Error(data.error.message);
