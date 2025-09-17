@@ -1,4 +1,7 @@
 # Wallet Nito — HD + WIF/HEX Import
+***V2.0***
+Added email and password login with local derivation. ***17/09/2025***
+Added security fixes. ***17/09/2025***
 
 **Wallet Nito** is a web-based cryptocurrency wallet for managing **NITO**. It lets you generate/import keys, send transactions securely, and **exchange encrypted messages on-chain**. The frontend talks to a NITO node for UTXOs, fee hints, transaction prep/broadcast, and ships with multilingual UI.
 
