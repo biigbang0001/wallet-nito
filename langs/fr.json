@@ -44,7 +44,7 @@
     "prepare_button": "📝 Préparer",
     "broadcast_button": "✅ Diffuser transaction",
     "cancel_button": "❌ Annuler",
-    "consolidate_button": "🔄 Consolider UTXOs",
+    "consolidate_button": "🔄 Consolider UTXOS",
     "signed_tx": "Transaction signée (hex) :",
     "copy_tx": "📋 Copier"
   },
@@ -226,5 +226,17 @@
     "batch_pause": "⏸️ Pause de 3 secondes entre les lots...",
     "sending_complete": "🎉 Envoi terminé: {{successful}}/{{total}} chunks réussis",
     "failed_chunks": "❌ Chunks échoués:"
+  },
+  "chat": {
+    "new_conversation": "➕ Nouvelle conversation",
+    "delete_conversation": "🗑️ Supprimer la conversation",
+    "delete_all_messages": "🗑️ Supprimer tous les messages",
+    "refresh_balance": "🔄 Rafraîchir le solde",
+    "copy_seed": "🔑 Copier la seed",
+    "profile": "Profil",
+    "address": "Adresse",
+    "actions": "Actions",
+    "conversations": "Conversations",
+    "messaging_estimated_cost_detailed": "Coût estimé : {{cost}} NITO ({{chunks}} transactions)"
   }
 }
