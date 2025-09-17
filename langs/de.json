@@ -226,5 +226,17 @@
     "batch_pause": "⏸️ 3-Sekunden-Pause zwischen Batches...",
     "sending_complete": "🎉 Senden abgeschlossen: {{successful}}/{{total}} Chunks erfolgreich",
     "failed_chunks": "❌ Fehlgeschlagene Chunks:"
+  },
+  "chat": {
+    "new_conversation": "➕ Neue Unterhaltung",
+    "delete_conversation": "🗑️ Unterhaltung löschen",
+    "delete_all_messages": "🗑️ Alle Nachrichten löschen",
+    "refresh_balance": "🔄 Kontostand aktualisieren",
+    "copy_seed": "🔑 Seed kopieren",
+    "profile": "Profil",
+    "address": "Adresse",
+    "actions": "Aktionen",
+    "conversations": "Unterhaltungen",
+    "messaging_estimated_cost_detailed": "Geschätzte Kosten: {{cost}} NITO ({{chunks}} Transaktionen)"
   }
 }
