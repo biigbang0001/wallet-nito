@@ -226,5 +226,17 @@
     "batch_pause": "⏸️ Pausa de 3 segundos entre lotes...",
     "sending_complete": "🎉 Envío completado: {{successful}}/{{total}} fragmentos exitosos",
     "failed_chunks": "❌ Fragmentos fallidos:"
+  },
+  "chat": {
+    "new_conversation": "➕ Nueva conversación",
+    "delete_conversation": "🗑️ Eliminar conversación",
+    "delete_all_messages": "🗑️ Eliminar todos los mensajes",
+    "refresh_balance": "🔄 Actualizar saldo",
+    "copy_seed": "🔑 Copiar seed",
+    "profile": "Perfil",
+    "address": "Dirección",
+    "actions": "Acciones",
+    "conversations": "Conversaciones",
+    "messaging_estimated_cost_detailed": "Costo estimado: {{cost}} NITO ({{chunks}} transacciones)"
   }
 }
