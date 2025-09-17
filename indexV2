@@ -312,20 +312,20 @@
       <div class="section">
         <h2 data-i18n="generate_section.title">🎯 Génération de clé privée Nito</h2>
         <button id="generateButton" data-i18n="generate_section.generate_button">🎲 Générer</button>
-        <p><span id="hdMasterKey" class="blurred"></span> <button id="copyHdKey" class="copy-btn" data-i18n="generate_section.copy">📋</button> <button id="revealHdKey" class="reveal-btn" data-i18n="generate_section.reveal">👁️ Révéler</button></p>
-        <p><span id="mnemonicPhrase" class="blurred"></span> <button id="copyMnemonic" class="copy-btn" data-i18n="generate_section.copy">📋</button> <button id="revealMnemonic" class="reveal-btn" data-i18n="generate_section.reveal">👁️ Révéler</button></p>
+        <p><strong>XPRV HD:</strong> <span id="hdMasterKey" class="blurred"></span> <button id="copyHdKey" class="copy-btn" data-i18n="generate_section.copy">📋</button> <button id="revealHdKey" class="reveal-btn" data-i18n="generate_section.reveal">👁️ Révéler</button></p>
+        <p><strong>SEED MNÉMOTECHNIQUE HD:</strong> <span id="mnemonicPhrase" class="blurred"></span> <button id="copyMnemonic" class="copy-btn" data-i18n="generate_section.copy">📋</button> <button id="revealMnemonic" class="reveal-btn" data-i18n="generate_section.reveal">👁️ Révéler</button></p>
         <p><span id="generatedAddress"></span></p>
         <p class="warning" data-i18n="generate_section.warning"><span id="inactivityTimer">[10:00]</span> ⚠️ Sauvegardez la clé privée immédiatement ! Elle sera effacée après 10 minutes d'inactivité ou après un rechargement de la page.</p>
       </div>
 
       <!-- Nouvelle section pour la connexion par email/password -->
       <div class="section">
-        <h2>🔐 Connexion par Email/Mot de passe</h2>
+        <h2>🔐</h2>
         <div class="auth-tabs">
           <button type="button" id="tabEmail" class="active">Email/Password</button>
           <button type="button" id="tabKey">Clé/Mnémotechnique</button>
         </div>
-        
+
         <!-- Formulaire Email/Password -->
         <div id="emailForm" class="auth-form active">
           <form id="emailInputs" autocomplete="off" onsubmit="return false" novalidate>
@@ -335,7 +335,7 @@
           <button id="connectEmailButton" data-i18n="import_section.import_button" type="button">🔐 Se connecter</button>
           <button id="emailSeedButton" class="copy-btn" style="display:none;" data-i18n="chat.copy_seed">🔑 Copier la phrase mnémotechnique</button>
           <p style="font-size: 14px; color: var(--text-secondary); margin-top: 10px;">
-            📋 Local: une phrase mnémotechnique BIP39 est dérivée de votre email+mot de passe (BIP84/bech32).
+
           </p>
         </div>
 
@@ -423,7 +423,7 @@
     import * as bip39 from 'https://esm.sh/bip39@3.1.0';
     import { Buffer } from 'https://esm.sh/buffer@6.0.3';
     window.Buffer = Buffer;
-    
+
     // Fonction pour générer une mnémotechnique à partir d'email/password (comme dans chat.html)
     window.getMnemonicFromCredentials = async function(email, password) {
       const enc = new TextEncoder();
@@ -516,26 +516,29 @@
         // Réafficher tous les onglets
         tabEmail.style.display = 'inline-block';
         tabKey.style.display = 'inline-block';
-        
+
         // Réinitialiser l'onglet email
         emailInputs.style.display = 'block';
         connectBtn.style.display = 'inline-block';
         emailSeedBtn.style.display = 'none';
         connectBtn.disabled = false;
-        connectBtn.textContent = connectBtn.getAttribute('data-i18n') ? 
-          (window.i18next && i18next.t ? i18next.t('import_section.import_button') : '🔐 Se connecter') : 
+        connectBtn.textContent = connectBtn.getAttribute('data-i18n') ?
+          (window.i18next && i18next.t ? i18next.t('import_section.import_button') : '🔐 Se connecter') :
           '🔐 Se connecter';
-        
+
         // Vider les champs (sécurité : toujours vider le password)
         emailInput.value = '';
         passwordInput.value = '';
         privateKeyWIF.value = '';
-        
+
+        // Retirer le floutage du champ clé/seed si présent
+        privateKeyWIF.classList.remove('blurred-input');
+
         // Réinitialiser les variables
         currentLoginType = null;
         currentMnemonic = null;
         isEmailConnected = false;
-        
+
         console.log('Interface réinitialisée - champs sensibles vidés');
       }
 
@@ -594,7 +597,7 @@
             }
           }
         };
-        
+
         tabKey.onclick = () => {
           if (tabKey.style.display !== 'none') {
             showKeyTab();
@@ -646,7 +649,7 @@
             // Générer la mnémotechnique à partir d'email/password
             if (typeof window.getMnemonicFromCredentials === 'function') {
               const mnemonic = await window.getMnemonicFromCredentials(email, password);
-              
+
               if (mnemonic) {
                 // Réinitialiser le wallet existant si nécessaire
                 if (window.walletKeyPair) {
@@ -662,42 +665,42 @@
 
                 currentLoginType = 'email';
                 currentMnemonic = mnemonic;
-                
+
                 // Utiliser la logique d'import existante
                 const wifInput = document.getElementById('privateKeyWIF');
                 if (wifInput) {
                   wifInput.value = mnemonic;
-                  
+
                   // Déclencher l'import
                   const importBtn = document.getElementById('importWalletButton');
                   if (importBtn) {
                     importBtn.click();
-                    
+
                     // Vérifier périodiquement si le wallet est prêt
                     let attempts = 0;
                     const checkWallet = setInterval(() => {
                       attempts++;
                       console.log(`Vérification ${attempts}: walletKeyPair=${!!window.walletKeyPair}, bech32Address=${!!window.bech32Address}`);
-                      
+
                       if (window.walletKeyPair && window.bech32Address) {
-    try {
-      var privateKeyWIF = document.getElementById('privateKeyWIF');
-      if (privateKeyWIF) { privateKeyWIF.value = ''; privateKeyWIF.setAttribute('value',''); }
-    } catch(e){} 
-    
+                        try {
+                          var privateKeyWIF = document.getElementById('privateKeyWIF');
+                          if (privateKeyWIF) { privateKeyWIF.value = ''; privateKeyWIF.setAttribute('value',''); }
+                        } catch(e){}
+
                         clearInterval(checkWallet);
-                        
+
                         // Masquer les champs de saisie, le bouton de connexion et l'onglet clé
                         emailInputs.style.display = 'none';
                         connectBtn.style.display = 'none';
                         emailSeedBtn.style.display = 'inline-block';
-                        
+
                         // Masquer l'onglet clé/seed maintenant que la connexion email a réussi
                         hideKeyTab();
-                        
+
                         // Marquer comme connecté
                         isEmailConnected = true;
-                        
+
                         console.log('Connexion email réussie - interface mise à jour');
                       } else if (attempts > 10) {
                         clearInterval(checkWallet);
@@ -728,8 +731,8 @@
               const originalText = emailSeedBtn.textContent;
               emailSeedBtn.textContent = '✅ Copié!';
               setTimeout(() => {
-                emailSeedBtn.textContent = window.i18next && i18next.t ? 
-                  i18next.t('generate_section.copy') : 
+                emailSeedBtn.textContent = window.i18next && i18next.t ?
+                  i18next.t('generate_section.copy') :
                   '🔑 Copier la phrase mnémotechnique';
               }, 2000);
             } catch (error) {
@@ -741,16 +744,19 @@
       }
 
       // Observer les imports via l'onglet clé/seed
-      if (window.importWalletButton) {
-        window.importWalletButton.addEventListener('click', () => {
-          if (currentLoginType === 'key' && privateKeyWIF.value.trim()) {
-            // Si on importe via clé/seed avec succès, masquer l'onglet email
+      const importWalletButton = document.getElementById('importWalletButton');
+      if (importWalletButton) {
+        importWalletButton.addEventListener('click', () => {
+          if (privateKeyWIF.value.trim()) {
+            // Si on importe via clé/seed avec succès, masquer l'onglet email et flouter la clé
             setTimeout(() => {
               if (window.walletKeyPair && window.bech32Address) {
                 hideEmailTab();
                 isEmailConnected = false;
                 currentMnemonic = null;
-                console.log('Import via clé/seed réussi - onglet email masqué');
+                // Flouter la clé après connexion réussie
+                privateKeyWIF.classList.add('blurred-input');
+                console.log('Import via clé/seed réussi - onglet email masqué, clé floutée');
               }
             }, 1000);
           }
@@ -816,7 +822,7 @@
   <script type="module" src="./wallet.js"></script>
 
   <footer>
-    <div style="margin-bottom: 10px;">🔓 <span data-i18n="footer.open_source">Ce projet est open source</span> -
+    <div style="margin-bottom: 10px;">🔗 <span data-i18n="footer.open_source">Ce projet est open source</span> -
       <a href="https://github.com/biigbang0001/wallet-nito" target="_blank"><span data-i18n="footer.view_code">Voir le code sur GitHub</span> 📖</a>
     </div>
     <div>🌐 <span data-i18n="footer.official_site">Site officiel NITO</span> - <a href="https://nito.network/" target="_blank">nito.network 🚀</a></div>
