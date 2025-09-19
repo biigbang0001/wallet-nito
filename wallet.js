@@ -10,6 +10,14 @@ import * as bip39 from 'https://esm.sh/bip39@3.1.0';
 import bip32Factory from 'https://esm.sh/bip32@4.0.0';
 
 window.Buffer = Buffer;
+// --- Global TX tracking for final popup ---
+let lastTxid = null; // global fallback for UI handlers
+window._lastConsolidationTxid = null; // canonical global
+
+// --- Success popup singleton + timer cleanup (shown only for the final TX) ---
+let _successPopupEl = null;
+let _successPopupTimer = null;
+
 
 // Network Configuration
 const NITO_NETWORK = {
@@ -1620,55 +1628,91 @@ function updateTranslations() {
 /**
  * UI utility functions
  */
+// Helper to show the final consolidation popup (separate name to avoid regex disabling inside loops)
+async function showConsolidationFinalPopup(txid) {
+  try { await showSuccessPopup(txid); }
+  catch (e) { console.error('Failed to show final consolidation popup:', e); }
+}
+
 async function showSuccessPopup(txid) {
+  // Cleanup existing popup/timers
+  try {
+    if (_successPopupTimer) { clearTimeout(_successPopupTimer); _successPopupTimer = null; }
+    if (_successPopupEl && _successPopupEl.parentNode) { _successPopupEl.parentNode.removeChild(_successPopupEl); }
+  } catch (_) {}
+
   const body = document.body;
   let progress = 0;
-  const explorerUrl = await getExplorerUrl(txid);
+  let explorerUrl;
+  try {
+    explorerUrl = await (typeof getExplorerUrl === "function" ? getExplorerUrl(txid) : Promise.resolve("#"));
+  } catch (_) { explorerUrl = "#"; }
+
   const popup = document.createElement('div');
   popup.className = 'popup';
   popup.style.position = 'fixed';
   popup.style.top = '50%';
   popup.style.left = '50%';
   popup.style.transform = 'translate(-50%, -50%)';
-  popup.style.background = body.classList.contains('dark-mode') ? '#37474f' : 'white';
+  popup.style.background = body && body.classList && body.classList.contains('dark-mode') ? '#37474f' : 'white';
   popup.style.padding = '20px';
   popup.style.border = '1px solid black';
-  popup.style.zIndex = '1000';
-  popup.style.color = body.classList.contains('dark-mode') ? '#e0e0e0' : '#1e3a8a';
-  popup.innerHTML = DOMPurify.sanitize(`
-    <p>${i18next.t('popup.success.message')}</p>
-    <p>${i18next.t('popup.success.progress')} <span id="progress"></span>%</p>
-    <p>${i18next.t('popup.success.txid')} <span id="txidLink">${txid}</span></p>
-    <button id="closeSuccessPopup">${i18next.t('popup.success.close')}</button>
+  popup.style.zIndex = '100000';
+  popup.style.pointerEvents = 'auto';
+  popup.style.color = body && body.classList && body.classList.contains('dark-mode') ? '#e0e0e0' : '#1e3a8a';
+
+  const _sanitize = (html) => (typeof DOMPurify !== "undefined" && DOMPurify && DOMPurify.sanitize) ? DOMPurify.sanitize(html) : html;
+  const _t = (k, fallback) => (typeof i18next !== "undefined" && i18next && i18next.t) ? i18next.t(k) : (fallback || k);
+
+  popup.innerHTML = _sanitize(`
+    <p>${_t('popup.success.message','Transaction envoyée avec succès !')}</p>
+    <p>${_t('popup.success.progress','Confirmation :')} <span id="progress">0</span>%</p>
+    <p>${_t('popup.success.txid','TXID :')} <span id="txidLink">${txid}</span></p>
+    <button id="closeSuccessPopup" type="button">${_t('popup.success.close','Fermer')}</button>
   `);
   document.body.appendChild(popup);
+  _successPopupEl = popup;
 
   const progressSpan = popup.querySelector('#progress');
   const txidLinkSpan = popup.querySelector('#txidLink');
-  const closeButton = document.getElementById('closeSuccessPopup');
+  const closeButton = popup.querySelector('#closeSuccessPopup');
+
+  const clearAll = () => {
+    try { if (_successPopupTimer) clearTimeout(_successPopupTimer); } catch(_) {}
+    _successPopupTimer = null;
+    if (_successPopupEl && _successPopupEl.parentNode) {
+      _successPopupEl.parentNode.removeChild(_successPopupEl);
+    }
+    _successPopupEl = null;
+  };
 
   const updateProgress = async () => {
-    if (progress < 100) {
-      progress = Math.min(progress + 1.67, 100);
-      progressSpan.textContent = Math.round(progress);
-      try {
-        const confirmed = await checkTransactionConfirmation(txid);
-        if (confirmed) {
-          progress = 100;
-          progressSpan.textContent = progress;
-          txidLinkSpan.innerHTML = `<a href="${explorerUrl}" target="_blank" rel="noopener noreferrer">${txid}</a>`;
-        } else {
-          setTimeout(updateProgress, 10000);
-        }
-      } catch {
-        setTimeout(updateProgress, 10000);
+    if (progress >= 100) return;
+    progress = Math.min(progress + 1.67, 100);
+    if (progressSpan) progressSpan.textContent = Math.round(progress);
+    try {
+      const confirmed = await (typeof checkTransactionConfirmation === "function" ? checkTransactionConfirmation(txid) : Promise.resolve(true));
+      if (confirmed) {
+        progress = 100;
+        if (progressSpan) progressSpan.textContent = progress;
+        if (txidLinkSpan) txidLinkSpan.innerHTML = `<a href="${explorerUrl}" target="_blank" rel="noopener noreferrer">${txid}</a>`;
+        return;
       }
-    }
+    } catch (_) {}
+    _successPopupTimer = setTimeout(updateProgress, 10000);
   };
 
   updateProgress();
-  closeButton.onclick = () => document.body.removeChild(popup);
+
+  if (closeButton) {
+    closeButton.onclick = (e) => { e.preventDefault(); e.stopPropagation(); clearAll(); };
+  }
+  const onKey = (e) => {
+    if (e.key === 'Escape') { clearAll(); document.removeEventListener('keydown', onKey); }
+  };
+  document.addEventListener('keydown', onKey);
 }
+
 
 function showLoadingSpinner() {
   const spinner = document.getElementById('loadingSpinner');
@@ -1743,6 +1787,10 @@ function updateInactivityTimer() {
  * Consolidation function
  */
 async function consolidateUtxos() {
+  
+  let finalPopupShown = false;
+let lastTxid = null;
+
   walletState.updateLastActionTime();
   syncLegacyVariables();
   const body = document.body;
@@ -1960,11 +2008,25 @@ async function consolidateUtxos() {
           const result = await transactionBuilder.signTxBatch(sourceAddress, amountToSend, batchUtxos, true);
           const hex = result.hex;
           const txid = await rpc('sendrawtransaction', [hex]);
+  lastTxid = txid;
+  window._lastConsolidationTxid = lastTxid;
+  window.lastTxid = lastTxid;
+  lastTxid = txid;
+  window._lastConsolidationTxid = lastTxid;
+  window.lastTxid = lastTxid;
+  lastTxid = txid;
+  window._lastConsolidationTxid = lastTxid;
+  window.lastTxid = lastTxid;
+  lastTxid = txid;
+  window._lastConsolidationTxid = lastTxid;
+  window.lastTxid = lastTxid;
 
           console.log(`Step ${stepCount} successful, TXID: ${txid}`);
-          await showSuccessPopup(txid);
+// await showSuccessPopup(txid); // disabled inside consolidation
           totalSuccess++;
           lastTxid = txid;
+  window._lastConsolidationTxid = lastTxid;
+  window.lastTxid = lastTxid;
 
           console.log('Waiting for confirmation (5 seconds)...');
           await sleepJitter(5000, 300, true);
@@ -1973,6 +2035,7 @@ async function consolidateUtxos() {
 
           if (currentUtxos.length <= 1) {
             console.log('CONSOLIDATION COMPLETE!');
+            try { await showConsolidationFinalPopup(txid); finalPopupShown = true; } catch(e) { console.error(e); }
             break;
           }
 
@@ -2016,8 +2079,12 @@ async function consolidateUtxos() {
     alert(i18next.t('errors.consolidation_error', { message: e.message }));
     console.error('Consolidation error:', e);
   }
+  if (!finalPopupShown && lastTxid) {
+    window._lastConsolidationTxid = lastTxid;
+    window.lastTxid = lastTxid;
+    try { await showConsolidationFinalPopup(lastTxid); } catch (e) { console.error('Failed to show final success popup:', e); }
+  }
 }
-
 // Helper function for DOM element selection
 const $ = id => document.getElementById(id);
 
@@ -2535,9 +2602,15 @@ window.addEventListener('load', async () => {
       try {
         showLoadingSpinner();
         const txid = await rpc('sendrawtransaction', [hex]);
+  lastTxid = txid;
+  window._lastConsolidationTxid = lastTxid;
+  window.lastTxid = lastTxid;
+  lastTxid = txid;
+  window._lastConsolidationTxid = lastTxid;
+  window.lastTxid = lastTxid;
         hideLoadingSpinner();
 
-        await showSuccessPopup(txid);
+await showSuccessPopup(txid);
         $('destinationAddress').value = '';
         $('amountNito').value = '';
         $('signedTx').textContent = '';
