@@ -1210,10 +1210,10 @@ for (let i = 0; i < poolTxids.length; i += BATCH_MEM) {
 }
 transactions.push(...mempoolResults);
 
-        // === Focus Mode: if some messageIds are incomplete, temporarily escalate scan without cap until complete or timeout ===
+        // === Focus Mode: scan illimité jusqu'à completion des messages détectés ===
         try {
-          const FOCUS_TIMEOUT_MS = 15000; // 15s
-          const startFocus = Date.now();
+          const MAX_SCAN_CYCLES = 100; // Limite de sécurité pour éviter les boucles infinies
+          let currentCycle = 0;
 
           const chunksByMsg = new Map(); // msgId -> { total, found:Set }
           for (const item of mempoolResults) {
@@ -1240,27 +1240,70 @@ transactions.push(...mempoolResults);
 
           if (needsFocus.length > 0) {
             console.log('🎯 Focus mode activé sur', needsFocus.length, 'message(s):', needsFocus);
+            console.log('📊 Messages incomplets détectés, scan illimité jusqu\'à completion...');
 
             const seen = new Set(poolTxids); // already scanned txids
-            while (Date.now() - startFocus < FOCUS_TIMEOUT_MS) {
+            let consecutiveEmptyScans = 0;
+            const MAX_EMPTY_SCANS = 10; // Arrêt si 10 scans consécutifs sans nouvelles transactions
+
+            while (currentCycle < MAX_SCAN_CYCLES && consecutiveEmptyScans < MAX_EMPTY_SCANS) {
+              currentCycle++;
+              
+              // Vérifier s'il reste des messages incomplets
+              let remainingIncomplete = [];
+              for (const mid of needsFocus) {
+                const info = chunksByMsg.get(mid);
+                if (!info || !info.total || info.found.size < info.total) {
+                  remainingIncomplete.push(mid);
+                }
+              }
+
+              if (remainingIncomplete.length === 0) {
+                console.log('✅ Focus mode terminé: tous les messages détectés sont maintenant complets');
+                break;
+              }
+
+              console.log(`🔄 Cycle ${currentCycle}: ${remainingIncomplete.length} messages encore incomplets`);
+              
               const freshTxids = await window.rpc("getrawmempool", [false]);
               const toScan = freshTxids.filter(txid => !seen.has(txid));
+              
               if (toScan.length === 0) {
-                await new Promise(r => setTimeout(r, 250));
+                consecutiveEmptyScans++;
+                console.log(`⏳ Aucune nouvelle transaction (${consecutiveEmptyScans}/${MAX_EMPTY_SCANS})`);
+                await new Promise(r => setTimeout(r, 1000)); // Attendre 1 seconde
+                continue;
+              } else {
+                consecutiveEmptyScans = 0; // Reset counter
               }
+
+              console.log(`🔍 Scan de ${toScan.length} nouvelles transactions mempool...`);
+
               const BATCH_FOCUS = 25;
+              let newChunksFound = 0;
+
               for (let j = 0; j < toScan.length; j += BATCH_FOCUS) {
                 const slice = toScan.slice(j, j + BATCH_FOCUS);
                 const partial = await Promise.all(slice.map(async (txid) => {
                   try {
                     const txDetail = await window.rpc("getrawtransaction", [txid, true]);
 
+                    // Vérifier si la transaction nous concerne
+                    const paysToAddress = (txDetail.vout || []).some(v =>
+                      (v.scriptPubKey?.address === address) ||
+                      (Array.isArray(v.scriptPubKey?.addresses) && v.scriptPubKey.addresses.includes(address))
+                    );
+                    if (!paysToAddress) return null;
+
                     let opReturnData = null;
                     for (const v of txDetail.vout || []) {
                       const hex = v.scriptPubKey?.hex;
                       if (hex) {
                         const data = this.extractOpReturnData(hex);
-                        if (data && data.startsWith(MESSAGING_CONFIG.MESSAGE_PREFIX)) { opReturnData = data; break; }
+                        if (data && data.startsWith(MESSAGING_CONFIG.MESSAGE_PREFIX)) { 
+                          opReturnData = data; 
+                          break; 
+                        }
                       }
                     }
                     if (!opReturnData) return null;
@@ -1272,46 +1315,85 @@ transactions.push(...mempoolResults);
                     const cidx = parseInt(parts[1]);
                     const tot = parseInt(parts[2]);
 
-                    if (!needsFocus.includes(mid)) return null;
+                    // Ne traiter que les messages qui nous intéressent
+                    if (!remainingIncomplete.includes(mid)) return null;
 
                     const senderAddress = await this.getTransactionSenderAddress(txDetail.txid);
 
-                    return { txid: txDetail.txid, time: Date.now() / 1000, vout: txDetail.vout, vin: txDetail.vin, opReturnData, senderAddress, __msgId: mid, __chunkIdx: cidx, __total: tot };
-                  } catch (_) { return null; }
+                    return { 
+                      txid: txDetail.txid, 
+                      time: Date.now() / 1000, 
+                      vout: txDetail.vout, 
+                      vin: txDetail.vin, 
+                      opReturnData, 
+                      senderAddress, 
+                      __msgId: mid, 
+                      __chunkIdx: cidx, 
+                      __total: tot 
+                    };
+                  } catch (_) { 
+                    return null; 
+                  }
                 }));
 
                 for (const it of partial) {
                   if (!it) continue;
                   seen.add(it.txid);
                   transactions.push(it);
+                  newChunksFound++;
+
+                  // Mettre à jour le tracking des chunks
                   if (it.__msgId && typeof it.__chunkIdx === 'number') {
                     let entry = chunksByMsg.get(it.__msgId);
-                    if (!entry) { entry = { total: it.__total || 0, found: new Set() }; chunksByMsg.set(it.__msgId, entry); }
+                    if (!entry) { 
+                      entry = { total: it.__total || 0, found: new Set() }; 
+                      chunksByMsg.set(it.__msgId, entry); 
+                    }
                     if (!isNaN(it.__chunkIdx)) entry.found.add(it.__chunkIdx);
                     if (it.__total && !entry.total) entry.total = it.__total;
+
+                    console.log(`📦 Chunk ${it.__chunkIdx}/${it.__total} trouvé pour message ${it.__msgId}`);
                   }
                 }
 
-                // check completion
-                let allDone = true;
-                for (const mid of needsFocus) {
-                  const info = chunksByMsg.get(mid);
-                  if (!info || !info.total || info.found.size < info.total) { allDone = false; break; }
-                }
-                if (allDone) {
-                  console.log('✅ Focus mode terminé: tous les chunks présents dans le mempool ont été récupérés');
-                  break;
+                // Micro-pause pour éviter la surcharge
+                await this.sleepJitter(1, 100, true);
+              }
+
+              console.log(`📈 Cycle ${currentCycle} terminé: ${newChunksFound} nouveaux chunks trouvés`);
+
+              // Afficher le statut des messages
+              for (const mid of remainingIncomplete) {
+                const info = chunksByMsg.get(mid);
+                if (info) {
+                  console.log(`📊 Message ${mid}: ${info.found.size}/${info.total} chunks`);
                 }
               }
 
-              // completion check after refresh
-              let allDone2 = true;
-              for (const mid of needsFocus) {
-                const info = chunksByMsg.get(mid);
-                if (!info || !info.total || info.found.size < info.total) { allDone2 = false; break; }
-              }
-              if (allDone2) break;
+              // Petite pause entre les cycles
+              await new Promise(r => setTimeout(r, 500));
             }
+
+            if (currentCycle >= MAX_SCAN_CYCLES) {
+              console.log('⚠️ Focus mode arrêté: limite de cycles atteinte');
+            }
+            if (consecutiveEmptyScans >= MAX_EMPTY_SCANS) {
+              console.log('⚠️ Focus mode arrêté: plus de nouvelles transactions');
+            }
+
+            // Rapport final
+            let completeMessages = 0;
+            let incompleteMessages = 0;
+            for (const mid of needsFocus) {
+              const info = chunksByMsg.get(mid);
+              if (info && info.total && info.found.size === info.total) {
+                completeMessages++;
+              } else {
+                incompleteMessages++;
+              }
+            }
+
+            console.log(`🎯 Focus mode résumé: ${completeMessages} messages complets, ${incompleteMessages} encore incomplets`);
           }
         } catch (e) {
           console.warn('⚠️ Focus mode erreur (ignorée):', e?.message || e);
