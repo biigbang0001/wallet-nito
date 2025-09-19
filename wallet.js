@@ -104,7 +104,7 @@ class SecureKeyManager {
 
   #updateAccess() {
     this.#lastAccess = Date.now();
-    this.#setupAutoCleanup();
+    // Do not re-arm auto-clean timer; cleanup happens on pagehide
   }
 
   async #generateSessionKey() {
@@ -691,6 +691,14 @@ class WalletState {
 
 // Global instances
 const walletState = new WalletState();
+
+// Clear encrypted keys when the page is closed or hidden (session end)
+try {
+  window.addEventListener('pagehide', function(){
+    try { if (walletState && walletState.keyManager) walletState.keyManager.clearAll(); } catch(e) {}
+  });
+} catch(e) {}
+
 const feeManager = walletState.feeManager;
 const hdManager = walletState.hdManager;
 
@@ -2166,6 +2174,7 @@ window.addEventListener('load', async () => {
     $('copyMnemonic').onclick = () => copyToClipboard('mnemonicPhrase');
 
     $('generateButton').onclick = async () => {
+      walletState.updateLastActionTime();
       syncLegacyVariables();
       try {
         const mnemonic = hdManager.generateMnemonic(24);
@@ -2195,7 +2204,6 @@ window.addEventListener('load', async () => {
           bech32: p2wpkh.address,
           taproot: p2tr.address
         };
-
 
         if (!await AddressManager.validateAddress(addresses.legacy) ||
             !await AddressManager.validateAddress(addresses.p2sh) ||
@@ -2229,9 +2237,7 @@ window.addEventListener('load', async () => {
         const revealHdKey = $('revealHdKey');
         const revealMnemonic = $('revealMnemonic');
         if (revealHdKey) {
-          revealHdKey.onclick = () => {    if (typeof updateInactivityTimer==='function') { try { updateInactivityTimer(); } catch(e) {} }
-    if (typeof walletState !== 'undefined' && walletState && typeof walletState.updateLastActionTime==='function') walletState.updateLastActionTime();
-
+          revealHdKey.onclick = () => {
             revealHdKey.disabled = true;
             $('hdMasterKey').classList.remove('blurred');
             setTimeout(() => {
@@ -2241,9 +2247,7 @@ window.addEventListener('load', async () => {
           };
         }
         if (revealMnemonic) {
-          revealMnemonic.onclick = () => {    if (typeof updateInactivityTimer==='function') { try { updateInactivityTimer(); } catch(e) {} }
-    if (typeof walletState !== 'undefined' && walletState && typeof walletState.updateLastActionTime==='function') walletState.updateLastActionTime();
-
+          revealMnemonic.onclick = () => {
             revealMnemonic.disabled = true;
             $('mnemonicPhrase').classList.remove('blurred');
             setTimeout(() => {
@@ -2253,8 +2257,6 @@ window.addEventListener('load', async () => {
           };
         }
 
-        if (typeof walletState !== 'undefined' && walletState && typeof walletState.updateLastActionTime==='function') walletState.updateLastActionTime();
-        if (typeof updateInactivityTimer==='function') { try { updateInactivityTimer(); } catch(e) {} }
         await incrementCounter();
         await updateCounterDisplay();
       } catch (e) {
