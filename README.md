@@ -2,6 +2,7 @@
 ***V2.0***
 * Added email and password login with local derivation. ***17/09/2025***
 * Added security fixes. ***17/09/2025***
+* Changing the messaging style to "mailbox" ***19/09/2025***
 
 ___
 
