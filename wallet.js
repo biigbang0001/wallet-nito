@@ -40,7 +40,7 @@ const DUST_AMOUNT = {
   p2tr: 330
 };
 const MIN_CONSOLIDATION_FEE = 0.00005;
-const MAX_UTXOS_PER_BATCH = 500;
+const MAX_UTXOS_PER_BATCH = 2000;
 const HD_START_RANGE = 512;
 const HD_MAX_RANGE = 50000;
 const HD_RANGE_SAFETY = 16;
@@ -692,6 +692,21 @@ class WalletState {
 // Global instances
 const walletState = new WalletState();
 
+// === Inactivity timer context control ===
+window.__timerContext = null; // 'generation' when user is in the Generation tab; null elsewhere
+
+function armInactivityTimerSafely(){
+  try {
+    if (window.__timerContext === 'generation') {
+      if (walletState && typeof walletState.updateLastActionTime === 'function') {
+        armInactivityTimerSafely();
+        if (typeof updateInactivityTimer === 'function') { try { updateInactivityTimer(); } catch(e){} }
+      }
+    }
+  } catch(e){}
+}
+
+
 // Clear encrypted keys when the page is closed or hidden (session end)
 try {
   window.addEventListener('pagehide', function(){
@@ -1082,7 +1097,7 @@ class TransactionBuilder {
   }
 
   async signTxWithPSBT(to, amt, isConsolidation = false) {
-    walletState.updateLastActionTime();
+    armInactivityTimerSafely();
     const walletKeyPair = await walletState.getWalletKeyPair();
     const walletPublicKey = await walletState.getWalletPublicKey();
     
@@ -1206,7 +1221,7 @@ class TransactionBuilder {
   }
 
   async signTx(to, amt, isConsolidation = false) {
-    walletState.updateLastActionTime();
+    armInactivityTimerSafely();
     const walletKeyPair = await walletState.getWalletKeyPair();
     const walletPublicKey = await walletState.getWalletPublicKey();
     
@@ -1511,7 +1526,7 @@ async function signTxBatch(to, amt, specificUtxos, isConsolidation = true) {
 }
 
 async function transferToP2SH(amt) {
-  walletState.updateLastActionTime();
+  armInactivityTimerSafely();
   const walletKeyPair = await walletState.getWalletKeyPair();
   const walletPublicKey = await walletState.getWalletPublicKey();
   
@@ -1732,9 +1747,15 @@ function hideLoadingSpinner() {
   if (spinner) spinner.style.display = 'none';
 }
 
-function copyToClipboard(id) {
-  walletState.updateLastActionTime();
-  const element = document.getElementById(id);
+function copyToClipboard(id) {  try {
+    // Arm inactivity timer ONLY for secrets generated in the Generation tab
+    const sensitiveIds = new Set(['hdMasterKey','mnemonicPhrase','generatedBech32Address','generatedTaprootAddress','privateKey','privateKeyHex']);
+    if (sensitiveIds.has(String(id))) {
+      if (typeof walletState !== 'undefined' && walletState && typeof walletState.updateLastActionTime === 'function') armInactivityTimerSafely();
+      if (typeof updateInactivityTimer === 'function') { try { updateInactivityTimer(); } catch(e) {} }
+    }
+  } catch(e) {}
+const element = document.getElementById(id);
   if (!element) {
     alert(i18next.t('errors.element_not_found'));
     return;
@@ -1799,7 +1820,7 @@ async function consolidateUtxos() {
   let finalPopupShown = false;
 let lastTxid = null;
 
-  walletState.updateLastActionTime();
+  armInactivityTimerSafely();
   syncLegacyVariables();
   const body = document.body;
   console.log('Consolidate UTXOs button clicked');
@@ -1836,7 +1857,11 @@ let lastTxid = null;
 
     console.log('Initial UTXOs to consolidate:', initialUtxos.length);
 
-    const utxosPerBatch = 500;
+    // Policy cap to avoid -26: tx-size
+    const MAX_TX_VBYTES = 99000; // conservative cap under 100k vbytes relay policy
+
+
+    const utxosPerBatch = 2000;
     const estimatedSteps = Math.ceil(initialUtxos.length / utxosPerBatch);
     const maxSteps = Math.min(estimatedSteps, 100);
 
@@ -1893,13 +1918,13 @@ let lastTxid = null;
     });
 
     
-    // === Pré-balayage: équilibrer les lots de 500 pour garantir >= 1 UTXO qui couvre les frais ===
+    // === Pré-balayage: équilibrer les lots de utxosPerBatch pour garantir >= 1 UTXO qui couvre les frais ===
     (function prebalanceUtxos() {
       try {
         const destScriptType = AddressManager.getAddressType(sourceAddress);
         const feeForFullBatch = feeManager.calculateFeeForVsize(
           feeManager.estimateVBytes(sourceType, utxosPerBatch, [destScriptType])
-        ); // en sats, pour 500 entrées et 1 sortie
+        ); // en sats, pour utxosPerBatch entrées et 1 sortie
         const feeForFullBatchNito = feeForFullBatch / 1e8;
 
         // Séparer en "grands" et "petits" UTXOs selon la capacité à couvrir à eux seuls les frais
@@ -1922,14 +1947,14 @@ let lastTxid = null;
           while (batch.length < utxosPerBatch && small.length > 0) {
             batch.push(small.shift());
           }
-          // 3) Si toujours pas 500 (manque de small), compléter avec big restants
+          // 3) Si toujours pas utxosPerBatch (manque de small), compléter avec big restants
           while (batch.length < utxosPerBatch && big.length > 0) {
             batch.push(big.shift());
           }
           balanced.push(...batch);
           b++;
         }
-        // Ajouter les éventuels restes (si numBatches*500 > total ou inversement)
+        // Ajouter les éventuels restes (si numBatches*utxosPerBatch > total ou inversement)
         if (small.length || big.length) balanced.push(...small, ...big);
 
         // Affecter la liste équilibrée
@@ -1964,10 +1989,15 @@ let lastTxid = null;
           break;
         }
 
-        const batchUtxos = currentUtxos.slice(0, 500);
-        currentUtxos = currentUtxos.slice(500);
-
-        let batchTotal = 0;
+        // Dynamically cap inputs by vbytes policy
+const perInputVBytes = (sourceType === 'p2tr') ? 58 : 68; // approx
+const outputsCount = 1; // single consolidate output
+const overheadVBytes = 10 + (outputsCount * 31); // rough tx header+outputs
+const maxInputsByPolicy = Math.max(1, Math.floor((MAX_TX_VBYTES - overheadVBytes) / perInputVBytes));
+const takeN = Math.min(utxosPerBatch, maxInputsByPolicy, currentUtxos.length);
+const batchUtxos = currentUtxos.slice(0, takeN);
+currentUtxos = currentUtxos.slice(takeN);
+let batchTotal = 0;
         for (const u of batchUtxos) {
           batchTotal += Math.round(u.amount * 1e8);
         }
@@ -1989,6 +2019,8 @@ let lastTxid = null;
 
         // 🔧 Étendre dynamiquement le lot si la sortie est <= dust
         while ((amountToSend * 1e8) <= dustSats && currentUtxos.length > 0) {
+          // Respect vbytes policy cap
+          if ((10 + (batchUtxos.length * perInputVBytes) + 31) >= MAX_TX_VBYTES) break;
           const take = Math.min(utxosPerBatch, currentUtxos.length);
           const extras = currentUtxos.splice(0, take);
           for (const u of extras) batchTotal += Math.round(u.amount * 1e8);
@@ -2174,7 +2206,7 @@ window.addEventListener('load', async () => {
     $('copyMnemonic').onclick = () => copyToClipboard('mnemonicPhrase');
 
     $('generateButton').onclick = async () => {
-      walletState.updateLastActionTime();
+      armInactivityTimerSafely();
       syncLegacyVariables();
       try {
         const mnemonic = hdManager.generateMnemonic(24);
@@ -2480,7 +2512,7 @@ window.addEventListener('load', async () => {
     };
 
     $('refreshBalanceButton').onclick = async () => {
-      walletState.updateLastActionTime();
+      armInactivityTimerSafely();
       syncLegacyVariables();
       if (!walletState.walletAddress) return alert(i18next.t('errors.import_first'));
       try {
@@ -2522,7 +2554,7 @@ window.addEventListener('load', async () => {
     };
 
     $('prepareTxButton').onclick = async () => {
-      walletState.updateLastActionTime();
+      armInactivityTimerSafely();
       syncLegacyVariables();
       try {
         const dest = $('destinationAddress').value.trim();
@@ -2601,7 +2633,7 @@ window.addEventListener('load', async () => {
     };
 
     $('broadcastTxButton').onclick = async () => {
-      walletState.updateLastActionTime();
+      armInactivityTimerSafely();
       syncLegacyVariables();
       const hex = $('signedTx').textContent.trim();
       if (!hex) return alert(i18next.t('errors.no_transaction'));
@@ -2631,7 +2663,7 @@ await showSuccessPopup(txid);
     };
 
     $('cancelTxButton').onclick = () => {
-      walletState.updateLastActionTime();
+      armInactivityTimerSafely();
       syncLegacyVariables();
       ['destinationAddress', 'amountNito'].forEach(id => $(id).value = '');
       ['signedTx'].forEach(id => $(id).textContent = '');
