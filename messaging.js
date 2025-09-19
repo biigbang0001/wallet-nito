@@ -25,7 +25,16 @@ class NitoMessaging {
     this.messageCache = new Map();
     this.deletedMessages = new Set();
     this.usedUtxos = new Set();
+    this.txDetailCache = new Map();
   }
+
+  // --- Timing helpers ---
+  sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+  async sleepJitter(baseMs = 1, maxJitterMs = 300, active = false) {
+    const extra = active ? Math.floor(Math.random() * (maxJitterMs + 1)) : 0;
+    await this.sleep(baseMs + extra);
+  }
+
 
   // ========== UTXO MANAGEMENT ==========
   markUtxoAsUsed(txid, vout) {
@@ -67,7 +76,9 @@ class NitoMessaging {
 
   async isInboundMessageUtxo(utxo) {
     try {
-      const tx = await window.rpc('getrawtransaction', [utxo.txid, true]);
+      const tx = this.txDetailCache.has(utxo.txid)
+        ? this.txDetailCache.get(utxo.txid)
+        : await (async () => { const t = await window.rpc('getrawtransaction', [utxo.txid, true]); this.txDetailCache.set(utxo.txid, t); return t; })();
       const hasMsg = (tx.vout || []).some(v => {
         const hex = v.scriptPubKey && v.scriptPubKey.hex;
         if (!hex) return false;
@@ -80,7 +91,16 @@ class NitoMessaging {
     }
   }
 
-  // ========== FEE CALCULATION ==========
+  
+  // Cached tx detail fetch to avoid duplicate RPCs
+  async getTxDetailCached(txid) {
+    if (this.txDetailCache.has(txid)) return this.txDetailCache.get(txid);
+    const t = await window.rpc('getrawtransaction', [txid, true]);
+    this.txDetailCache.set(txid, t);
+    return t;
+  }
+
+// ========== FEE CALCULATION ==========
   async computeAdaptiveChunkAmount() {
     const estTxVBytes = 250;
     const feeRate = await this.getEffectiveFeeRate();
@@ -107,10 +127,11 @@ class NitoMessaging {
 
   // ========== INITIALIZATION ==========
   async initialize() {
-    if (window.walletKeyPair && window.walletPublicKey && window.bech32Address && window.rpc) {
-      walletData.keyPair = window.walletKeyPair;
-      walletData.publicKey = window.walletPublicKey;
-      walletData.bech32Address = window.bech32Address;
+    if (window.isWalletReady && window.isWalletReady() && window.getWalletAddress && window.rpc) {
+      // Utiliser les fonctions sécurisées au lieu de stocker les clés
+      walletData.keyPair = null; // Ne jamais stocker la clé privée
+      walletData.publicKey = null; // Ne jamais stocker la clé publique
+      walletData.bech32Address = window.getWalletAddress();
       walletData.isInitialized = true;
       console.log('🔒 Messagerie initialisée pour:', walletData.bech32Address);
       return true;
@@ -231,7 +252,8 @@ class NitoMessaging {
     this.checkInitialized();
 
     try {
-      const publicKeyHex = Buffer.from(walletData.publicKey).toString('hex');
+      const publicKey = await window.getWalletPublicKey();
+      const publicKeyHex = Buffer.from(publicKey).toString('hex');
       const opReturnData = `NITOPUB:${publicKeyHex}`;
 
       console.log('Publication clé publique...');
@@ -338,8 +360,9 @@ class NitoMessaging {
 
       const messageJson = JSON.stringify(messageData);
 
+      const walletKeyPair = await window.getWalletKeyPair();
       const sharedKey = await this.deriveSharedKey(
-        walletData.keyPair.privateKey,
+        walletKeyPair.privateKey,
         recipientPublicKey
       );
 
@@ -354,7 +377,7 @@ class NitoMessaging {
         timestamp: messageData.timestamp,
         sender: walletData.bech32Address,
         recipient: recipientBech32Address,
-        senderPublicKey: Buffer.from(walletData.publicKey).toString('hex'),
+        senderPublicKey: Buffer.from(await window.getWalletPublicKey()).toString('hex'),
         recipientPublicKey: Buffer.from(recipientPublicKey).toString('hex')
       };
 
@@ -401,8 +424,9 @@ class NitoMessaging {
 
       console.log("✅ Clé publique expéditeur trouvée");
 
+      const walletKeyPair = await window.getWalletKeyPair();
       const sharedKey = await this.deriveSharedKey(
-        walletData.keyPair.privateKey,
+        walletKeyPair.privateKey,
         senderPublicKey
       );
 
@@ -483,11 +507,13 @@ class NitoMessaging {
         psbt.addOutput({ address: walletData.bech32Address, value: change });
       }
 
+      const walletKeyPair = await window.getWalletKeyPair();
+      const walletPublicKey = await window.getWalletPublicKey();
       const signer = {
-        network: walletData.keyPair.network,
-        privateKey: walletData.keyPair.privateKey,
-        publicKey: walletData.publicKey,
-        sign: (hash) => Buffer.from(walletData.keyPair.sign(hash))
+        network: walletKeyPair.network,
+        privateKey: walletKeyPair.privateKey,
+        publicKey: walletPublicKey,
+        sign: (hash) => Buffer.from(walletKeyPair.sign(hash))
       };
 
       psbt.signInput(0, signer, [bitcoin.Transaction.SIGHASH_ALL]);
@@ -570,12 +596,15 @@ class NitoMessaging {
       splitPsbt.addOutput({ address: walletData.bech32Address, value: change });
     }
 
-    const signer = {
-      network: walletData.keyPair.network,
-      privateKey: walletData.keyPair.privateKey,
-      publicKey: walletData.publicKey,
-      sign: (hash) => Buffer.from(walletData.keyPair.sign(hash))
-    };
+    const walletKeyPair = await window.getWalletKeyPair();
+const walletPublicKey = await window.getWalletPublicKey();
+const signer = {
+  network: walletKeyPair.network,
+  privateKey: walletKeyPair.privateKey,
+  publicKey: walletPublicKey,
+  sign: (hash) => Buffer.from(walletKeyPair.sign(hash))
+};
+
 
     splitPsbt.signInput(0, signer, [bitcoin.Transaction.SIGHASH_ALL]);
     splitPsbt.finalizeAllInputs();
@@ -713,13 +742,34 @@ class NitoMessaging {
     const minFunding = adaptiveAmount * 0.98;
     const candidates = allUtxos.filter(u => u.amount >= minFunding);
     
-    // Filtrer les UTXOs de messages entrants
-    const tagged = await Promise.all(candidates.map(async u => ({ 
-      u, 
-      inbound: await this.isInboundMessageUtxo(u) 
-    })));
-    
-    const filtered = tagged.filter(t => !t.inbound).map(t => t.u);
+    // Filtrer les UTXOs de messages entrants (optimisé: déduplication par txid + batching 15 en parallèle)
+    const uniqueTxids = Array.from(new Set(candidates.map(u => u.txid)));
+    const inboundSet = new Set();
+    const BATCH = 15;
+
+    for (let i = 0; i < uniqueTxids.length; i += BATCH) {
+      const chunk = uniqueTxids.slice(i, i + BATCH);
+      const results = await Promise.all(chunk.map(async (txid) => {
+        try {
+          const tx = await this.getTxDetailCached(txid);
+          // Cherche un OP_RETURN portant un message
+          const hasMsg = (tx.vout || []).some(v => {
+            const hex = v.scriptPubKey && v.scriptPubKey.hex;
+            if (!hex) return false;
+            const data = this.extractOpReturnData(hex);
+            return !!(data && data.startsWith(MESSAGING_CONFIG.MESSAGE_PREFIX));
+          });
+          return { txid, inbound: !!hasMsg };
+        } catch (e) {
+          return { txid, inbound: false };
+        }
+      }));
+      for (const r of results) { if (r.inbound) inboundSet.add(r.txid); }
+            // micro pause avec jitter sous forte charge
+      await this.sleepJitter(1, 300, uniqueTxids.length > 100);
+    }
+
+    const filtered = candidates.filter(u => !inboundSet.has(u.txid));
     console.log(`💰 UTXOs disponibles filtrés: ${filtered.length}`);
     
     return filtered;
@@ -736,30 +786,34 @@ class NitoMessaging {
       console.log(`📦 Envoi en parallèle avec ${utxosToUse.length} UTXOs pour ${chunks.length} chunks`);
 
       // Créer toutes les transactions
-      const transactionPromises = [];
-      for (let i = 0; i < chunks.length; i++) {
-        const opReturnData = `${MESSAGING_CONFIG.MESSAGE_PREFIX}${messageId}_${i}_${chunks.length}_${chunks[i]}`;
-        const selectedUtxo = utxosToUse[i];
+      const preparedTransactions = [];
+      const BATCH_PREP = 100;
+      for (let startIdx = 0; startIdx < chunks.length; startIdx += BATCH_PREP) {
+        const slice = chunks.slice(startIdx, startIdx + BATCH_PREP);
+        const part = await Promise.all(slice.map(async (_, k) => {
+          const i = startIdx + k;
+          const opReturnData = `${MESSAGING_CONFIG.MESSAGE_PREFIX}${messageId}_${i}_${chunks.length}_${chunks[i]}`;
+          const selectedUtxo = utxosToUse[i];
 
-        console.log(`🚀 Préparation chunk ${i + 1}/${chunks.length} avec UTXO ${selectedUtxo.txid}:${selectedUtxo.vout} (${selectedUtxo.amount} NITO)`);
+          console.log(`🚀 Préparation chunk ${i + 1}/${chunks.length} avec UTXO ${selectedUtxo.txid}:${selectedUtxo.vout} (${selectedUtxo.amount} NITO)`);
 
-        const transactionPromise = this.createOpReturnTransaction(
-          recipientBech32Address,
-          MESSAGING_CONFIG.MESSAGE_FEE,
-          opReturnData,
-          selectedUtxo
-        ).then(hex => ({
-          chunkIndex: i,
-          hex: hex,
-          utxo: selectedUtxo
+          const hex = await this.createOpReturnTransaction(
+            recipientBech32Address,
+            MESSAGING_CONFIG.MESSAGE_FEE,
+            opReturnData,
+            selectedUtxo
+          );
+          return { chunkIndex: i, hex, utxo: selectedUtxo };
         }));
 
-        transactionPromises.push(transactionPromise);
+        for (const it of part) preparedTransactions.push(it);
+
+        // micro-pause avec jitter entre lots (active si > 100 chunks)
+        await this.sleepJitter(1, 300, chunks.length > 100);
       }
 
-      console.log('🔧 Création de toutes les transactions...');
-      const preparedTransactions = await Promise.all(transactionPromises);
-      console.log('✅ Toutes les transactions préparées');
+      console.log('🔧 Création de toutes les transactions (lot de 100)...');
+      console.log('✅ Toutes les transactions préparées')
 
       // Envoyer par lots avec retry
       const results = await this.sendTransactionBatches(preparedTransactions);
@@ -1097,49 +1151,172 @@ class NitoMessaging {
       // Scan du mempool
       try {
         const mempoolTxids = await window.rpc("getrawmempool", [false]);
-        const MAX_MEMPOOL = 500;
-        const poolTxids = mempoolTxids.slice(0, MAX_MEMPOOL);
-        console.log(`🔥 Mempool: analyse de ${poolTxids.length} transactions (limitées)`);
+        const MAX_MEMPOOL = null; // unlimited scan
+        const poolTxids = MAX_MEMPOOL ? mempoolTxids.slice(0, MAX_MEMPOOL) : mempoolTxids;
+        console.log(`🔥 Mempool: analyse de ${poolTxids.length} transactions `);
 
-        const mempoolPromises = poolTxids.map(async (txid) => {
-          try {
-            const txDetail = await window.rpc("getrawtransaction", [txid, true]);
+        const mempoolResults = [];
+const BATCH_MEM = 15;
+for (let i = 0; i < poolTxids.length; i += BATCH_MEM) {
+  const slice = poolTxids.slice(i, i + BATCH_MEM);
+  const partial = await Promise.all(slice.map(async (txid) => {
+    try {
+      const txDetail = await window.rpc("getrawtransaction", [txid, true]);
 
-            const paysToAddress = (txDetail.vout || []).some(v =>
-              (v.scriptPubKey?.address === address) ||
-              (Array.isArray(v.scriptPubKey?.addresses) && v.scriptPubKey.addresses.includes(address))
-            );
-            if (!paysToAddress) return null;
+      const paysToAddress = (txDetail.vout || []).some(v =>
+        (v.scriptPubKey?.address === address) ||
+        (Array.isArray(v.scriptPubKey?.addresses) && v.scriptPubKey.addresses.includes(address))
+      );
+      if (!paysToAddress) return null;
 
-            let opReturnData = null;
-            for (const v of txDetail.vout || []) {
-              const hex = v.scriptPubKey?.hex;
-              if (hex) {
-                const data = this.extractOpReturnData(hex);
-                if (data && data.startsWith(MESSAGING_CONFIG.MESSAGE_PREFIX)) {
-                  opReturnData = data;
+      let opReturnData = null;
+      for (const v of txDetail.vout || []) {
+        const hex = v.scriptPubKey?.hex;
+        if (hex) {
+          const data = this.extractOpReturnData(hex);
+          if (data && data.startsWith(MESSAGING_CONFIG.MESSAGE_PREFIX)) {
+            opReturnData = data;
+            break;
+          }
+        }
+      }
+      if (!opReturnData) return null;
+
+      // parse message fields for focus mode
+      let __msgId = null, __chunkIdx = null, __total = null;
+      try {
+        const __payload = opReturnData.substring(MESSAGING_CONFIG.MESSAGE_PREFIX.length);
+        const __parts = __payload.split('_');
+        if (__parts.length >= 3) { __msgId = __parts[0]; __chunkIdx = parseInt(__parts[1]); __total = parseInt(__parts[2]); }
+      } catch (_) {}
+
+      const senderAddress = await this.getTransactionSenderAddress(txDetail.txid);
+
+      return {
+        txid: txDetail.txid,
+        time: Date.now() / 1000,
+        vout: txDetail.vout,
+        vin: txDetail.vin,
+        opReturnData,
+        senderAddress
+      };
+    } catch (_) {
+      return null;
+    }
+  }));
+  for (const it of partial) { if (it) mempoolResults.push(it); }
+  // micro pause avec jitter sous forte charge
+  await this.sleepJitter(1, 300, poolTxids.length > 100);
+}
+transactions.push(...mempoolResults);
+
+        // === Focus Mode: if some messageIds are incomplete, temporarily escalate scan without cap until complete or timeout ===
+        try {
+          const FOCUS_TIMEOUT_MS = 15000; // 15s
+          const startFocus = Date.now();
+
+          const chunksByMsg = new Map(); // msgId -> { total, found:Set }
+          for (const item of mempoolResults) {
+            if (item && item.opReturnData && item.opReturnData.startsWith(MESSAGING_CONFIG.MESSAGE_PREFIX)) {
+              try {
+                const payload = item.opReturnData.substring(MESSAGING_CONFIG.MESSAGE_PREFIX.length);
+                const parts = payload.split('_');
+                if (parts.length >= 3) {
+                  const mid = parts[0];
+                  const cidx = parseInt(parts[1]);
+                  const tot = parseInt(parts[2]);
+                  if (!chunksByMsg.has(mid)) chunksByMsg.set(mid, { total: tot, found: new Set() });
+                  const entry = chunksByMsg.get(mid);
+                  if (!isNaN(cidx)) entry.found.add(cidx);
+                }
+              } catch (_) {}
+            }
+          }
+
+          const needsFocus = [];
+          for (const [mid, info] of chunksByMsg.entries()) {
+            if (info.total && info.found.size < info.total) needsFocus.push(mid);
+          }
+
+          if (needsFocus.length > 0) {
+            console.log('🎯 Focus mode activé sur', needsFocus.length, 'message(s):', needsFocus);
+
+            const seen = new Set(poolTxids); // already scanned txids
+            while (Date.now() - startFocus < FOCUS_TIMEOUT_MS) {
+              const freshTxids = await window.rpc("getrawmempool", [false]);
+              const toScan = freshTxids.filter(txid => !seen.has(txid));
+              if (toScan.length === 0) {
+                await new Promise(r => setTimeout(r, 250));
+              }
+              const BATCH_FOCUS = 25;
+              for (let j = 0; j < toScan.length; j += BATCH_FOCUS) {
+                const slice = toScan.slice(j, j + BATCH_FOCUS);
+                const partial = await Promise.all(slice.map(async (txid) => {
+                  try {
+                    const txDetail = await window.rpc("getrawtransaction", [txid, true]);
+
+                    let opReturnData = null;
+                    for (const v of txDetail.vout || []) {
+                      const hex = v.scriptPubKey?.hex;
+                      if (hex) {
+                        const data = this.extractOpReturnData(hex);
+                        if (data && data.startsWith(MESSAGING_CONFIG.MESSAGE_PREFIX)) { opReturnData = data; break; }
+                      }
+                    }
+                    if (!opReturnData) return null;
+
+                    const payload = opReturnData.substring(MESSAGING_CONFIG.MESSAGE_PREFIX.length);
+                    const parts = payload.split('_');
+                    if (parts.length < 3) return null;
+                    const mid = parts[0];
+                    const cidx = parseInt(parts[1]);
+                    const tot = parseInt(parts[2]);
+
+                    if (!needsFocus.includes(mid)) return null;
+
+                    const senderAddress = await this.getTransactionSenderAddress(txDetail.txid);
+
+                    return { txid: txDetail.txid, time: Date.now() / 1000, vout: txDetail.vout, vin: txDetail.vin, opReturnData, senderAddress, __msgId: mid, __chunkIdx: cidx, __total: tot };
+                  } catch (_) { return null; }
+                }));
+
+                for (const it of partial) {
+                  if (!it) continue;
+                  seen.add(it.txid);
+                  transactions.push(it);
+                  if (it.__msgId && typeof it.__chunkIdx === 'number') {
+                    let entry = chunksByMsg.get(it.__msgId);
+                    if (!entry) { entry = { total: it.__total || 0, found: new Set() }; chunksByMsg.set(it.__msgId, entry); }
+                    if (!isNaN(it.__chunkIdx)) entry.found.add(it.__chunkIdx);
+                    if (it.__total && !entry.total) entry.total = it.__total;
+                  }
+                }
+
+                // check completion
+                let allDone = true;
+                for (const mid of needsFocus) {
+                  const info = chunksByMsg.get(mid);
+                  if (!info || !info.total || info.found.size < info.total) { allDone = false; break; }
+                }
+                if (allDone) {
+                  console.log('✅ Focus mode terminé: tous les chunks présents dans le mempool ont été récupérés');
                   break;
                 }
               }
+
+              // completion check after refresh
+              let allDone2 = true;
+              for (const mid of needsFocus) {
+                const info = chunksByMsg.get(mid);
+                if (!info || !info.total || info.found.size < info.total) { allDone2 = false; break; }
+              }
+              if (allDone2) break;
             }
-            if (!opReturnData) return null;
-
-            const senderAddress = await this.getTransactionSenderAddress(txDetail.txid);
-
-            return {
-              txid: txDetail.txid,
-              time: Date.now() / 1000,
-              vout: txDetail.vout,
-              vin: txDetail.vin,
-              opReturnData,
-              senderAddress
-            };
-          } catch {
-            return null;
           }
-        });
+        } catch (e) {
+          console.warn('⚠️ Focus mode erreur (ignorée):', e?.message || e);
+        }
 
-        const mempoolResults = (await Promise.all(mempoolPromises)).filter(Boolean);
         transactions.push(...mempoolResults);
         console.log(`➕ Mempool: ${mempoolResults.length} transactions pertinentes ajoutées`);
       } catch (e) {
@@ -1307,7 +1484,7 @@ const messaging = new NitoMessaging();
 
 function initializeMessagingWhenReady() {
   const checkWalletReady = setInterval(async () => {
-    if (window.walletKeyPair && window.walletPublicKey && window.bech32Address) {
+    if (window.isWalletReady && window.isWalletReady()) {
       const initialized = await messaging.initialize();
       if (initialized) {
         clearInterval(checkWalletReady);
@@ -1446,37 +1623,20 @@ function displayMessages(messages) {
   const list = document.getElementById('messageList');
   if (!list) return;
 
-  list.innerHTML = '';
-  list.style.display = messages.length > 0 ? 'block' : 'none';
-
-  if (messages.length === 0) {
+  if (!messages || !messages.length) {
     list.innerHTML = `<div class="message-item">${i18next.t('encrypted_messaging.no_messages')}</div>`;
     return;
   }
 
-  messages.forEach((msg, i) => {
-    const div = document.createElement('div');
-    div.className = `message-item ${msg.status}`;
-    div.dataset.messageId = msg.id;
+  // Adapter les données au format de la liste "boîte mail"
+  const inboxItems = messages.map(m => ({
+    id: m.id, // utiliser l'identifiant du message
+    senderBech32: m.sender || m.senderAddress || 'unknown_sender',
+    time: Math.floor((m.timestamp || Date.now()) / 1000),
+    body: m.content || ''
+  }));
 
-    const statusIcon = msg.status === 'error' ? '❌' : '📧';
-    const statusText = msg.status === 'error' ? i18next.t('encrypted_messaging.message_error') : i18next.t('encrypted_messaging.unread');
-    const securityIcon = msg.verified ? '🔐✓' : '🔐';
-
-    div.innerHTML = `
-      <div><strong>${statusIcon} ${i18next.t('encrypted_messaging.message')} ${i + 1} ${securityIcon}</strong></div>
-      <div><strong>${i18next.t('encrypted_messaging.from')}:</strong> ${msg.sender || msg.senderAddress}</div>
-      <div style="white-space: pre-wrap;"><strong>${i18next.t('encrypted_messaging.content')}:</strong> ${msg.content}</div>
-      <div class="message-status">
-        ${new Date(msg.timestamp).toLocaleString()} - ${statusText}${msg.verified ? ' ✓ ' + i18next.t('encrypted_messaging.signature_verified') : ''}${msg.status !== 'error' ? ' 🔐 ' + i18next.t('encrypted_messaging.noble_ecdh_encryption') : ''}
-      </div>
-      <div style="margin-top: 10px; padding: 8px; background: #e8f4fd; border-radius: 4px; font-size: 14px; color: #2563eb;">
-        💡 <span>${i18next.t('encrypted_messaging.consolidate_to_delete')}</span>
-      </div>
-    `;
-
-    list.appendChild(div);
-  });
+  window.renderInboxEmailStyle(inboxItems);
 }
 
 function updateUnreadCounter(count) {
