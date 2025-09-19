@@ -626,8 +626,7 @@ const signer = {
     while (elapsedTime < MAX_WAIT_TIME && !found) {
       const progressBasedOnTime = Math.min(100, (elapsedTime / EXPECTED_BLOCK_TIME) * 100);
       this.updateProgressIndicator(0, 1, i18next.t('progress_indicators.preparing_utxos_percentage', { percentage: Math.round(progressBasedOnTime) }));
-
-      console.log(`🔍 Attente ${Math.round(elapsedTime/1000)}s - Progression: ${Math.round(progressBasedOnTime)}%`);
+console.log(`🔍 Attente ${Math.round(elapsedTime/1000)}s - Progression: ${Math.round(progressBasedOnTime)}%`);
 
       await this.delay(CHECK_INTERVAL);
       elapsedTime += CHECK_INTERVAL;
@@ -1242,7 +1241,7 @@ const BATCH_MEM = 200;
 for (let i = 0; i < poolTxids.length; i += BATCH_MEM) {
   const slice = poolTxids.slice(i, i + BATCH_MEM);
   const partial = await Promise.all(slice.map(async (txid) => {
-    try {
+try {
       const txDetail = await window.rpc("getrawtransaction", [txid, true]);
 
       const paysToAddress = (txDetail.vout || []).some(v =>
@@ -1275,76 +1274,48 @@ for (let i = 0; i < poolTxids.length; i += BATCH_MEM) {
       const senderAddress = await this.getTransactionSenderAddress(txDetail.txid);
 
       return {
-        txid: txDetail.txid,
-        time: Date.now() / 1000,
-        vout: txDetail.vout,
-        vin: txDetail.vin,
-        opReturnData,
-        senderAddress
-      };
+  txid: txDetail.txid,
+  time: Date.now() / 1000,
+  vout: txDetail.vout,
+  vin: txDetail.vin,
+  opReturnData,
+  senderAddress,
+  __msgId,
+  __chunkIdx,
+  __total
+};
     } catch (_) {
       return null;
     }
   }));
+  const filteredBatch = partial.filter(Boolean);
+  mempoolResults.push(...filteredBatch);
   processed += slice.length;
   this.showScanProgress(processed, totalAll);
   // micro pause avec jitter sous forte charge
   await this.sleepJitter(1, 300, poolTxids.length > 100);
 }
-transactions.push(...mempoolResults);
+// Keep only complete messages from mempool
+const chunksById = new Map();
+for (const it of mempoolResults) {
+  if (!it || !it.opReturnData || !it.opReturnData.startsWith(MESSAGING_CONFIG.MESSAGE_PREFIX)) continue;
+  const mid = it.__msgId; const idx = it.__chunkIdx; const tot = it.__total;
+  if (mid == null || tot == null || isNaN(tot)) continue;
+  if (!chunksById.has(mid)) chunksById.set(mid, { total: tot, found: new Set(), items: [] });
+  const entry = chunksById.get(mid);
+  if (!isNaN(idx)) entry.found.add(idx);
+  entry.items.push(it);
+}
+const completeIds = new Set();
+for (const [mid, entry] of chunksById.entries()) {
+  if (entry.total && entry.found.size === entry.total) completeIds.add(mid);
+}
+const mempoolComplete = mempoolResults.filter(it => it && completeIds.has(it.__msgId));
+transactions.push(...mempoolComplete);
 
-        // === Focus Mode: if some messageIds are incomplete, temporarily escalate scan without cap until complete or timeout ===
-        try {
-          const FOCUS_TIMEOUT_MS = 15000; // 15s
-          const startFocus = Date.now();
-
-          const chunksByMsg = new Map(); // msgId -> { total, found:Set }
-          for (const item of mempoolResults) {
-            if (item && item.opReturnData && item.opReturnData.startsWith(MESSAGING_CONFIG.MESSAGE_PREFIX)) {
-              try {
-                const payload = item.opReturnData.substring(MESSAGING_CONFIG.MESSAGE_PREFIX.length);
-                const parts = payload.split('_');
-                if (parts.length >= 3) {
-                  const mid = parts[0];
-                  const cidx = parseInt(parts[1]);
-                  const tot = parseInt(parts[2]);
-                  if (!chunksByMsg.has(mid)) chunksByMsg.set(mid, { total: tot, found: new Set() });
-                  const entry = chunksByMsg.get(mid);
-                  if (!isNaN(cidx)) entry.found.add(cidx);
-                }
-              } catch (_) {}
-            }
-          }
-
-          const needsFocus = [];
-          for (const [mid, info] of chunksByMsg.entries()) {
-            if (info.total && info.found.size < info.total) needsFocus.push(mid);
-          }
-
-          if (needsFocus.length > 0) {
-            console.log('🎯 Focus mode activé sur', needsFocus.length, 'message(s):', needsFocus);
-
-            
-            // ⛔ Arrêt demandé: ne pas rescanner le mempool, afficher uniquement les messages complets déjà détectés
-            console.log('⛔ Focus mode désactivé: arrêt après première passe; pas de rescan supplémentaire.');
-            try {
-              const incompleteSet = new Set(needsFocus);
-              // Retirer les chunks appartenant à des messages incomplets
-              for (let k = transactions.length - 1; k >= 0; k--) {
-                const it = transactions[k];
-                if (it && it.__msgId && incompleteSet.has(it.__msgId)) {
-                  transactions.splice(k, 1);
-                }
-              }
-            } catch (_) {}
-          }
-        } catch (e) {
-          console.warn('⚠️ Focus mode erreur (ignorée):', e?.message || e);
-        }
-
-        // (duplicate push removed);
-        console.log(`➕ Mempool: ${mempoolResults.length} transactions pertinentes ajoutées`);
-      } catch (e) {
+        // Focus mode removed: we now include only complete mempool messages above.
+console.log(`➕ Mempool: ${mempoolResults.length} transactions pertinentes (complètes) ajoutées`);
+} catch (e) {
         console.warn("⚠️ Mempool non scanné:", e.message);
       }
 
