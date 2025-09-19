@@ -1836,7 +1836,58 @@ async function consolidateUtxos() {
       privateKey: (sourceType === 'p2tr') ? (await walletState.getTaprootKeyPair()).privateKey.toString('hex') : originalWalletKeyPair.privateKey.toString('hex')
     });
 
-    let currentUtxos = [...initialUtxos];
+    
+    // === Pré-balayage: équilibrer les lots de 500 pour garantir >= 1 UTXO qui couvre les frais ===
+    (function prebalanceUtxos() {
+      try {
+        const destScriptType = AddressManager.getAddressType(sourceAddress);
+        const feeForFullBatch = feeManager.calculateFeeForVsize(
+          feeManager.estimateVBytes(sourceType, utxosPerBatch, [destScriptType])
+        ); // en sats, pour 500 entrées et 1 sortie
+        const feeForFullBatchNito = feeForFullBatch / 1e8;
+
+        // Séparer en "grands" et "petits" UTXOs selon la capacité à couvrir à eux seuls les frais
+        const big = [];
+        const small = [];
+        for (const u of initialUtxos) {
+          const sats = Math.round(u.amount * 1e8);
+          if (sats >= feeForFullBatch) big.push(u); else small.push(u);
+        }
+
+        // Construire un ordre équilibré: chaque lot de 500 commence avec 1 "big" si possible
+        const numBatches = Math.ceil(initialUtxos.length / utxosPerBatch);
+        const balanced = [];
+        let b = 0;
+        while (b < numBatches) {
+          const batch = [];
+          // 1) Réserver un "big" pour ce lot si disponible
+          if (big.length > 0) batch.push(big.shift());
+          // 2) Compléter avec des "small"
+          while (batch.length < utxosPerBatch && small.length > 0) {
+            batch.push(small.shift());
+          }
+          // 3) Si toujours pas 500 (manque de small), compléter avec big restants
+          while (batch.length < utxosPerBatch && big.length > 0) {
+            batch.push(big.shift());
+          }
+          balanced.push(...batch);
+          b++;
+        }
+        // Ajouter les éventuels restes (si numBatches*500 > total ou inversement)
+        if (small.length || big.length) balanced.push(...small, ...big);
+
+        // Affecter la liste équilibrée
+        var balancedUtxos = balanced;
+        // Note: si jamais il n'y a pas assez de "big" pour chaque lot, certains lots n'auront pas
+        // un UTXO unique couvrant les frais. Ils auront néanmoins la plus grande dispersion possible.
+      } catch (e) {
+        console.warn('⚠️ Pré-balayage UTXOs non appliqué (continuation sans équilibrage):', e?.message || e);
+        var balancedUtxos = [...initialUtxos];
+      }
+      // Exposer balancedUtxos dans la portée
+      window.__balancedUtxos = balancedUtxos;
+    })();
+    let currentUtxos = window.__balancedUtxos || [...initialUtxos];
     let stepCount = 1;
     let totalSuccess = 0;
     let lastTxid = null;
@@ -1874,18 +1925,44 @@ async function consolidateUtxos() {
 
         const inputSize = (sourceType === 'p2tr') ? 57.5 : 68;
         const destScriptType = AddressManager.getAddressType(sourceAddress);
-        let estimatedFees = feeManager.calculateFeeForVsize(feeManager.estimateVBytes(sourceType, batchUtxos.length, [destScriptType]));
+        const dustSats = feeManager.getDustThreshold(destScriptType);
+        let estimatedFees = feeManager.calculateFeeForVsize(
+          feeManager.estimateVBytes(sourceType, batchUtxos.length, [destScriptType])
+        );
+        let amountToSend = (batchTotal - estimatedFees) / 1e8;
 
-        const amountToSend = (batchTotal - estimatedFees) / 1e8;
+        // 🔧 Étendre dynamiquement le lot si la sortie est <= dust
+        while ((amountToSend * 1e8) <= dustSats && currentUtxos.length > 0) {
+          const take = Math.min(utxosPerBatch, currentUtxos.length);
+          const extras = currentUtxos.splice(0, take);
+          for (const u of extras) batchTotal += Math.round(u.amount * 1e8);
+          batchUtxos.push(...extras);
+
+          estimatedFees = feeManager.calculateFeeForVsize(
+            feeManager.estimateVBytes(sourceType, batchUtxos.length, [destScriptType])
+          );
+          amountToSend = (batchTotal - estimatedFees) / 1e8;
+          console.log(
+            `⬆️ Lot étendu: ${batchUtxos.length} entrées, frais estimés ${(estimatedFees/1e8).toFixed(8)} NITO, sortie ${(amountToSend).toFixed(8)} NITO`
+          );
+        }
+
+        // Si même agrandi, on ne dépasse pas le dust, abandon proprement
+        if ((amountToSend * 1e8) <= dustSats) {
+          console.log(
+            `⛔ Étape ${stepCount} ignorée: total après frais ${((batchTotal - estimatedFees)/1e8).toFixed(8)} NITO ≤ dust ${(dustSats/1e8).toFixed(8)} NITO`
+          );
+          break;
+        }
 
         console.log(`Step ${stepCount} - Consolidation: ${batchUtxos.length} UTXOs → 1 UTXO (${amountToSend} NITO)`);
-
         try {
           const result = await transactionBuilder.signTxBatch(sourceAddress, amountToSend, batchUtxos, true);
           const hex = result.hex;
           const txid = await rpc('sendrawtransaction', [hex]);
 
           console.log(`Step ${stepCount} successful, TXID: ${txid}`);
+          await showSuccessPopup(txid);
           totalSuccess++;
           lastTxid = txid;
 
@@ -1895,7 +1972,7 @@ async function consolidateUtxos() {
           console.log(`UTXOs remaining to process: ${currentUtxos.length}`);
 
           if (currentUtxos.length <= 1) {
-            console.log("CONSOLIDATION COMPLETE!");
+            console.log('CONSOLIDATION COMPLETE!');
             break;
           }
 
@@ -1916,17 +1993,8 @@ async function consolidateUtxos() {
             throw error;
           }
         }
-
-        stepCount++;
       }
-
-      hideLoadingSpinner();
-
-      if (totalSuccess > 0) {
-        await showSuccessPopup(lastTxid);
-        alert(i18next.t('consolidation_final_completed', { transactions: totalSuccess, utxos: currentUtxos.length }));
-        setTimeout(() => document.getElementById('refreshBalanceButton').click(), 3000);
-      } else if (currentUtxos.length <= 1) {
+      if (currentUtxos.length <= 1) {
         alert(i18next.t('consolidation_single_utxo_completed'));
         setTimeout(() => document.getElementById('refreshBalanceButton').click(), 3000);
       } else {
@@ -1938,6 +2006,7 @@ async function consolidateUtxos() {
       alert(i18next.t('errors.consolidation_error', { message: e.message }));
       console.error('Consolidation error:', e);
     } finally {
+      hideLoadingSpinner();
       walletState.walletAddress = originalWalletAddress;
       syncLegacyVariables();
     }
