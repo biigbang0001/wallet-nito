@@ -1083,7 +1083,7 @@ const signer = {
       const uniqueTxids = [...new Set(scan.unspents?.map(utxo => utxo.txid) || [])];
       console.log(`🚀 Analyse complète de ${uniqueTxids.length} transactions par lots...`);
 
-      const BATCH_SIZE = 20;
+      const BATCH_SIZE = 200;
 
       for (let i = 0; i < uniqueTxids.length; i += BATCH_SIZE) {
         const batch = uniqueTxids.slice(i, i + BATCH_SIZE);
@@ -1210,10 +1210,10 @@ for (let i = 0; i < poolTxids.length; i += BATCH_MEM) {
 }
 transactions.push(...mempoolResults);
 
-        // === Focus Mode: scan illimité jusqu'à completion des messages détectés ===
+        // === Focus Mode: if some messageIds are incomplete, temporarily escalate scan without cap until complete or timeout ===
         try {
-          const MAX_SCAN_CYCLES = 100; // Limite de sécurité pour éviter les boucles infinies
-          let currentCycle = 0;
+          const FOCUS_TIMEOUT_MS = 15000; // 15s
+          const startFocus = Date.now();
 
           const chunksByMsg = new Map(); // msgId -> { total, found:Set }
           for (const item of mempoolResults) {
@@ -1240,160 +1240,20 @@ transactions.push(...mempoolResults);
 
           if (needsFocus.length > 0) {
             console.log('🎯 Focus mode activé sur', needsFocus.length, 'message(s):', needsFocus);
-            console.log('📊 Messages incomplets détectés, scan illimité jusqu\'à completion...');
 
-            const seen = new Set(poolTxids); // already scanned txids
-            let consecutiveEmptyScans = 0;
-            const MAX_EMPTY_SCANS = 10; // Arrêt si 10 scans consécutifs sans nouvelles transactions
-
-            while (currentCycle < MAX_SCAN_CYCLES && consecutiveEmptyScans < MAX_EMPTY_SCANS) {
-              currentCycle++;
-              
-              // Vérifier s'il reste des messages incomplets
-              let remainingIncomplete = [];
-              for (const mid of needsFocus) {
-                const info = chunksByMsg.get(mid);
-                if (!info || !info.total || info.found.size < info.total) {
-                  remainingIncomplete.push(mid);
+            
+            // ⛔ Arrêt demandé: ne pas rescanner le mempool, afficher uniquement les messages complets déjà détectés
+            console.log('⛔ Focus mode désactivé: arrêt après première passe; pas de rescan supplémentaire.');
+            try {
+              const incompleteSet = new Set(needsFocus);
+              // Retirer les chunks appartenant à des messages incomplets
+              for (let k = transactions.length - 1; k >= 0; k--) {
+                const it = transactions[k];
+                if (it && it.__msgId && incompleteSet.has(it.__msgId)) {
+                  transactions.splice(k, 1);
                 }
               }
-
-              if (remainingIncomplete.length === 0) {
-                console.log('✅ Focus mode terminé: tous les messages détectés sont maintenant complets');
-                break;
-              }
-
-              console.log(`🔄 Cycle ${currentCycle}: ${remainingIncomplete.length} messages encore incomplets`);
-              
-              const freshTxids = await window.rpc("getrawmempool", [false]);
-              const toScan = freshTxids.filter(txid => !seen.has(txid));
-              
-              if (toScan.length === 0) {
-                consecutiveEmptyScans++;
-                console.log(`⏳ Aucune nouvelle transaction (${consecutiveEmptyScans}/${MAX_EMPTY_SCANS})`);
-                await new Promise(r => setTimeout(r, 1000)); // Attendre 1 seconde
-                continue;
-              } else {
-                consecutiveEmptyScans = 0; // Reset counter
-              }
-
-              console.log(`🔍 Scan de ${toScan.length} nouvelles transactions mempool...`);
-
-              const BATCH_FOCUS = 25;
-              let newChunksFound = 0;
-
-              for (let j = 0; j < toScan.length; j += BATCH_FOCUS) {
-                const slice = toScan.slice(j, j + BATCH_FOCUS);
-                const partial = await Promise.all(slice.map(async (txid) => {
-                  try {
-                    const txDetail = await window.rpc("getrawtransaction", [txid, true]);
-
-                    // Vérifier si la transaction nous concerne
-                    const paysToAddress = (txDetail.vout || []).some(v =>
-                      (v.scriptPubKey?.address === address) ||
-                      (Array.isArray(v.scriptPubKey?.addresses) && v.scriptPubKey.addresses.includes(address))
-                    );
-                    if (!paysToAddress) return null;
-
-                    let opReturnData = null;
-                    for (const v of txDetail.vout || []) {
-                      const hex = v.scriptPubKey?.hex;
-                      if (hex) {
-                        const data = this.extractOpReturnData(hex);
-                        if (data && data.startsWith(MESSAGING_CONFIG.MESSAGE_PREFIX)) { 
-                          opReturnData = data; 
-                          break; 
-                        }
-                      }
-                    }
-                    if (!opReturnData) return null;
-
-                    const payload = opReturnData.substring(MESSAGING_CONFIG.MESSAGE_PREFIX.length);
-                    const parts = payload.split('_');
-                    if (parts.length < 3) return null;
-                    const mid = parts[0];
-                    const cidx = parseInt(parts[1]);
-                    const tot = parseInt(parts[2]);
-
-                    // Ne traiter que les messages qui nous intéressent
-                    if (!remainingIncomplete.includes(mid)) return null;
-
-                    const senderAddress = await this.getTransactionSenderAddress(txDetail.txid);
-
-                    return { 
-                      txid: txDetail.txid, 
-                      time: Date.now() / 1000, 
-                      vout: txDetail.vout, 
-                      vin: txDetail.vin, 
-                      opReturnData, 
-                      senderAddress, 
-                      __msgId: mid, 
-                      __chunkIdx: cidx, 
-                      __total: tot 
-                    };
-                  } catch (_) { 
-                    return null; 
-                  }
-                }));
-
-                for (const it of partial) {
-                  if (!it) continue;
-                  seen.add(it.txid);
-                  transactions.push(it);
-                  newChunksFound++;
-
-                  // Mettre à jour le tracking des chunks
-                  if (it.__msgId && typeof it.__chunkIdx === 'number') {
-                    let entry = chunksByMsg.get(it.__msgId);
-                    if (!entry) { 
-                      entry = { total: it.__total || 0, found: new Set() }; 
-                      chunksByMsg.set(it.__msgId, entry); 
-                    }
-                    if (!isNaN(it.__chunkIdx)) entry.found.add(it.__chunkIdx);
-                    if (it.__total && !entry.total) entry.total = it.__total;
-
-                    console.log(`📦 Chunk ${it.__chunkIdx}/${it.__total} trouvé pour message ${it.__msgId}`);
-                  }
-                }
-
-                // Micro-pause pour éviter la surcharge
-                await this.sleepJitter(1, 100, true);
-              }
-
-              console.log(`📈 Cycle ${currentCycle} terminé: ${newChunksFound} nouveaux chunks trouvés`);
-
-              // Afficher le statut des messages
-              for (const mid of remainingIncomplete) {
-                const info = chunksByMsg.get(mid);
-                if (info) {
-                  console.log(`📊 Message ${mid}: ${info.found.size}/${info.total} chunks`);
-                }
-              }
-
-              // Petite pause entre les cycles
-              await new Promise(r => setTimeout(r, 500));
-            }
-
-            if (currentCycle >= MAX_SCAN_CYCLES) {
-              console.log('⚠️ Focus mode arrêté: limite de cycles atteinte');
-            }
-            if (consecutiveEmptyScans >= MAX_EMPTY_SCANS) {
-              console.log('⚠️ Focus mode arrêté: plus de nouvelles transactions');
-            }
-
-            // Rapport final
-            let completeMessages = 0;
-            let incompleteMessages = 0;
-            for (const mid of needsFocus) {
-              const info = chunksByMsg.get(mid);
-              if (info && info.total && info.found.size === info.total) {
-                completeMessages++;
-              } else {
-                incompleteMessages++;
-              }
-            }
-
-            console.log(`🎯 Focus mode résumé: ${completeMessages} messages complets, ${incompleteMessages} encore incomplets`);
+            } catch (_) {}
           }
         } catch (e) {
           console.warn('⚠️ Focus mode erreur (ignorée):', e?.message || e);
