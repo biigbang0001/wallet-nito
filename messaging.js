@@ -1083,66 +1083,145 @@ const signer = {
       const uniqueTxids = [...new Set(scan.unspents?.map(utxo => utxo.txid) || [])];
       console.log(`🚀 Analyse complète de ${uniqueTxids.length} transactions par lots...`);
 
-      const BATCH_SIZE = 200;
+      
+      let processed = 0;
+      let totalAll = uniqueTxids.length;
+const BATCH_SIZE = 200;
 
       for (let i = 0; i < uniqueTxids.length; i += BATCH_SIZE) {
         const batch = uniqueTxids.slice(i, i + BATCH_SIZE);
-        const batchNumber = Math.floor(i/BATCH_SIZE) + 1;
-        const totalBatches = Math.ceil(uniqueTxids.length/BATCH_SIZE);
+        const batchNumber = Math.floor(i / BATCH_SIZE) + 1;
+        const totalBatches = Math.ceil(uniqueTxids.length / BATCH_SIZE);
 
         console.log(`🔥 Lot ${batchNumber}/${totalBatches}: ${batch.length} transactions`);
-        this.showScanProgress(i + batch.length, uniqueTxids.length);
 
-        const batchPromises = batch.map(async (txid) => {
-          try {
-            const txDetail = await window.rpc("getrawtransaction", [txid, true]);
+        // === Nouvelle logique: on boucle tant que tout le lot n'est pas 100% analysé ===
+        const MAX_RETRY = 20;
+        let attempt = 0;
+        let remaining = new Set(batch);
+        const got = new Map(); // txid -> txDetail simplifié
 
-            let opReturnData = null;
-            for (const output of txDetail.vout) {
-              if (output.scriptPubKey && output.scriptPubKey.hex) {
-                opReturnData = this.extractOpReturnData(output.scriptPubKey.hex);
-                if (opReturnData) break;
-              }
-            }
+        while (remaining.size > 0 && attempt < MAX_RETRY) {
+          attempt++;
 
-            let senderAddress = "unknown_sender";
-            if (txDetail.vin && txDetail.vin.length > 0) {
-              const firstInput = txDetail.vin[0];
-              if (firstInput.txid && firstInput.vout !== undefined) {
-                try {
-                  const prevTx = await window.rpc('getrawtransaction', [firstInput.txid, true]);
-                  const prevOutput = prevTx.vout[firstInput.vout];
-                  if (prevOutput.scriptPubKey && prevOutput.scriptPubKey.addresses) {
-                    senderAddress = prevOutput.scriptPubKey.addresses[0];
-                  } else if (prevOutput.scriptPubKey && prevOutput.scriptPubKey.address) {
-                    senderAddress = prevOutput.scriptPubKey.address;
-                  }
-                } catch (e) {
-                  // Garde "unknown_sender"
+          const nowTxids = Array.from(remaining);
+          const results = await Promise.all(nowTxids.map(async (txid) => {
+            try {
+              const txDetail = await window.rpc("getrawtransaction", [txid, true]);
+
+              let opReturnData = null;
+              for (const output of txDetail.vout) {
+                if (output.scriptPubKey && output.scriptPubKey.hex) {
+                  const data = this.extractOpReturnData(output.scriptPubKey.hex);
+                  if (data) { opReturnData = data; break; }
                 }
               }
+
+              let senderAddress = "unknown_sender";
+              if (txDetail.vin && txDetail.vin.length > 0) {
+                const firstInput = txDetail.vin[0];
+                if (firstInput.txid && firstInput.vout !== undefined) {
+                  try {
+                    const prevTx = await window.rpc('getrawtransaction', [firstInput.txid, true]);
+                    const prevOutput = prevTx.vout[firstInput.vout];
+                    if (prevOutput.scriptPubKey?.addresses?.length) {
+                      senderAddress = prevOutput.scriptPubKey.addresses[0];
+                    } else if (prevOutput.scriptPubKey?.address) {
+                      senderAddress = prevOutput.scriptPubKey.address;
+                    }
+                  } catch (_) {}
+                }
+              }
+
+              return {
+                ok: true,
+                txid: txDetail.txid,
+                value: {
+                  txid: txDetail.txid,
+                  time: txDetail.time || txDetail.blocktime || Date.now() / 1000,
+                  vout: txDetail.vout,
+                  vin: txDetail.vin,
+                  opReturnData,
+                  senderAddress
+                }
+              };
+            } catch (_) {
+              return { ok: false, txid };
             }
+          }));
 
-            return {
-              txid: txDetail.txid,
-              time: txDetail.time || txDetail.blocktime || Date.now() / 1000,
-              vout: txDetail.vout,
-              vin: txDetail.vin,
-              opReturnData: opReturnData,
-              senderAddress: senderAddress
-            };
-          } catch (e) {
-            console.warn(`⚠️ Transaction ${txid} inaccessible`);
-            return null;
+          // intègre les réussites, conserve les manquants
+          for (const r of results) {
+            if (r.ok) {
+              got.set(r.txid, r.value);
+              remaining.delete(r.txid);
+            }
           }
-        });
 
-        const batchResults = await Promise.all(batchPromises);
-        const validResults = batchResults.filter(tx => tx !== null);
+          const missing = remaining.size;
+          if (missing > 0) {
+            console.log(`♻️ Reprise des manquants: ${missing} restants (tentative ${attempt}/${MAX_RETRY})`);
+            // backoff exponentiel + jitter
+            const delayMs = Math.min(4000, 200 * Math.pow(1.5, attempt)) + Math.floor(Math.random() * 250);
+            await new Promise(res => setTimeout(res, delayMs));
+          }
+        }
+
+        if (remaining.size > 0) {
+          console.warn(`⚠️ Lot ${batchNumber}: ${remaining.size} tx introuvables après ${MAX_RETRY} tentatives. On bloque jusqu'à complétion.`);
+          while (remaining.size > 0) {
+            const nowTxids = Array.from(remaining);
+            for (const txid of nowTxids) {
+              try {
+                const txDetail = await window.rpc("getrawtransaction", [txid, true]);
+                let opReturnData = null;
+                for (const output of txDetail.vout) {
+                  if (output.scriptPubKey?.hex) {
+                    const data = this.extractOpReturnData(output.scriptPubKey.hex);
+                    if (data) { opReturnData = data; break; }
+                  }
+                }
+                let senderAddress = "unknown_sender";
+                if (txDetail.vin && txDetail.vin.length > 0) {
+                  const firstInput = txDetail.vin[0];
+                  if (firstInput.txid && firstInput.vout !== undefined) {
+                    try {
+                      const prevTx = await window.rpc('getrawtransaction', [firstInput.txid, true]);
+                      const prevOutput = prevTx.vout[firstInput.vout];
+                      if (prevOutput.scriptPubKey?.addresses?.length) {
+                        senderAddress = prevOutput.scriptPubKey.addresses[0];
+                      } else if (prevOutput.scriptPubKey?.address) {
+                        senderAddress = prevOutput.scriptPubKey.address;
+                      }
+                    } catch (_) {}
+                  }
+                }
+                got.set(txid, {
+                  txid: txDetail.txid,
+                  time: txDetail.time || txDetail.blocktime || Date.now() / 1000,
+                  vout: txDetail.vout,
+                  vin: txDetail.vin,
+                  opReturnData,
+                  senderAddress
+                });
+                remaining.delete(txid);
+              } catch (_) {}
+            }
+            if (remaining.size > 0) {
+              await new Promise(res => setTimeout(res, 500));
+            }
+          }
+        }
+
+        // À ce stade: 100% du lot est traité
+        const validResults = Array.from(got.values());
         transactions.push(...validResults);
 
-        console.log(`✅ Lot ${batchNumber} terminé: ${validResults.length}/${batch.length} transactions analysées`);
+        // ✅ On n’avance la barre de progression qu’une fois le lot totalement complet
+        processed += batch.length;
+        this.showScanProgress(processed, totalAll);
 
+        console.log(`✅ Lot ${batchNumber} terminé: ${validResults.length}/${batch.length} transactions analysées`);
         if (i + BATCH_SIZE < uniqueTxids.length) {
           await new Promise(resolve => setTimeout(resolve, 100));
         }
@@ -1156,7 +1235,10 @@ const signer = {
         console.log(`🔥 Mempool: analyse de ${poolTxids.length} transactions `);
 
         const mempoolResults = [];
-const BATCH_MEM = 15;
+        // Update total to include mempool
+        totalAll = uniqueTxids.length + poolTxids.length;
+
+const BATCH_MEM = 200;
 for (let i = 0; i < poolTxids.length; i += BATCH_MEM) {
   const slice = poolTxids.slice(i, i + BATCH_MEM);
   const partial = await Promise.all(slice.map(async (txid) => {
@@ -1204,7 +1286,8 @@ for (let i = 0; i < poolTxids.length; i += BATCH_MEM) {
       return null;
     }
   }));
-  for (const it of partial) { if (it) mempoolResults.push(it); }
+  processed += slice.length;
+  this.showScanProgress(processed, totalAll);
   // micro pause avec jitter sous forte charge
   await this.sleepJitter(1, 300, poolTxids.length > 100);
 }
@@ -1259,7 +1342,7 @@ transactions.push(...mempoolResults);
           console.warn('⚠️ Focus mode erreur (ignorée):', e?.message || e);
         }
 
-        transactions.push(...mempoolResults);
+        // (duplicate push removed);
         console.log(`➕ Mempool: ${mempoolResults.length} transactions pertinentes ajoutées`);
       } catch (e) {
         console.warn("⚠️ Mempool non scanné:", e.message);
