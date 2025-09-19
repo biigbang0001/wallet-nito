@@ -2166,7 +2166,6 @@ window.addEventListener('load', async () => {
     $('copyMnemonic').onclick = () => copyToClipboard('mnemonicPhrase');
 
     $('generateButton').onclick = async () => {
-      walletState.updateLastActionTime();
       syncLegacyVariables();
       try {
         const mnemonic = hdManager.generateMnemonic(24);
@@ -2196,6 +2195,7 @@ window.addEventListener('load', async () => {
           bech32: p2wpkh.address,
           taproot: p2tr.address
         };
+
 
         if (!await AddressManager.validateAddress(addresses.legacy) ||
             !await AddressManager.validateAddress(addresses.p2sh) ||
@@ -2229,7 +2229,9 @@ window.addEventListener('load', async () => {
         const revealHdKey = $('revealHdKey');
         const revealMnemonic = $('revealMnemonic');
         if (revealHdKey) {
-          revealHdKey.onclick = () => {
+          revealHdKey.onclick = () => {    if (typeof updateInactivityTimer==='function') { try { updateInactivityTimer(); } catch(e) {} }
+    if (typeof walletState !== 'undefined' && walletState && typeof walletState.updateLastActionTime==='function') walletState.updateLastActionTime();
+
             revealHdKey.disabled = true;
             $('hdMasterKey').classList.remove('blurred');
             setTimeout(() => {
@@ -2239,7 +2241,9 @@ window.addEventListener('load', async () => {
           };
         }
         if (revealMnemonic) {
-          revealMnemonic.onclick = () => {
+          revealMnemonic.onclick = () => {    if (typeof updateInactivityTimer==='function') { try { updateInactivityTimer(); } catch(e) {} }
+    if (typeof walletState !== 'undefined' && walletState && typeof walletState.updateLastActionTime==='function') walletState.updateLastActionTime();
+
             revealMnemonic.disabled = true;
             $('mnemonicPhrase').classList.remove('blurred');
             setTimeout(() => {
@@ -2249,6 +2253,8 @@ window.addEventListener('load', async () => {
           };
         }
 
+        if (typeof walletState !== 'undefined' && walletState && typeof walletState.updateLastActionTime==='function') walletState.updateLastActionTime();
+        if (typeof updateInactivityTimer==='function') { try { updateInactivityTimer(); } catch(e) {} }
         await incrementCounter();
         await updateCounterDisplay();
       } catch (e) {
@@ -2258,7 +2264,6 @@ window.addEventListener('load', async () => {
     };
 
     $('importWalletButton').onclick = async () => {
-      walletState.updateLastActionTime();
       syncLegacyVariables();
       try {
         const input = $('privateKeyWIF').value.trim();
