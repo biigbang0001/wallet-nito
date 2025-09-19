@@ -852,7 +852,56 @@
         height: 50px;
       }
     }
-  </style>
+
+/* === INBOX (email-style) === */
+.inbox-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: .5rem 1rem;
+  align-items: center;
+  padding: 1rem 1.25rem;
+  border-radius: 12px;
+  background: var(--glass-bg);
+  border: 1px solid var(--glass-border);
+  cursor: pointer;
+  transition: transform .15s ease, box-shadow .2s ease, border-color .2s ease;
+  margin: .5rem 0;
+}
+.inbox-row:hover { transform: translateX(4px); box-shadow: 0 4px 14px rgba(0,0,0,.1); border-color: rgba(102,126,234,.35); }
+.inbox-title { font-weight: 700; }
+.inbox-from { font-family: monospace; opacity:.9; }
+.inbox-time { font-size:.85rem; color: var(--text-secondary); }
+</style>
+
+<style>
+/* Style du modal en mode clair */
+[data-theme="light"] #msgModal #msgBody {
+  background: #ffffff !important;
+  color: #2d3748 !important;
+  border: 1px solid #e2e8f0;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+/* Style du modal en mode sombre */
+[data-theme="dark"] #msgModal #msgBody {
+  background: #1a202c !important;
+  color: #e2e8f0 !important;
+  border: 1px solid #4a5568;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+/* Style du conteneur principal du modal */
+[data-theme="light"] #msgModal > div > div {
+  background: #ffffff !important;
+  border: 1px solid #e2e8f0;
+}
+
+[data-theme="dark"] #msgModal > div > div {
+  background: #1a202c !important;
+  border: 1px solid #4a5568;
+}
+</style>
+
 </head>
 <body>
   <div class="container">
@@ -881,7 +930,7 @@
 
     <!-- Global key generation counter -->
     <div class="counter-box">
-      <span data-i18n="counter.keys_generated">🔑 Clés Nito générées :</span> <span id="keyCounter">0</span>
+      <span data-i18n="counter.keys_generated">🔒 Clés Nito générées :</span> <span id="keyCounter">0</span>
     </div>
 
     <!-- Main navigation tabs -->
@@ -936,7 +985,7 @@
         <div id="keyForm" class="auth-form">
           <textarea id="privateKeyWIF" placeholder="WIF/Hex/mnémotechnique HD/XPRV HD" style="width: 100%; height: 80px; resize: vertical;"></textarea>
           <button id="revealWifInput" class="reveal-btn" data-i18n="generate_section.reveal">👁️ Révéler</button>
-          <button id="importWalletButton" data-i18n="import_section.import_button">🔥 Importer</button>
+          <button id="importWalletButton" data-i18n="import_section.import_button">📥 Importer</button>
         </div>
 
         <!-- Wallet status display -->
@@ -1337,7 +1386,7 @@
                       attempts++;
                       console.log(`Verification ${attempts}: walletKeyPair=${!!window.walletKeyPair}, bech32Address=${!!window.bech32Address}`);
 
-                      if (window.walletKeyPair && window.bech32Address) {
+                      if (window.isWalletReady && window.isWalletReady()) {
                         // Security: Clear the private key field after successful import
                         try {
                           var privateKeyWIF = document.getElementById('privateKeyWIF');
@@ -1410,7 +1459,7 @@
           if (privateKeyWIF.value.trim()) {
             // Wait for successful import then hide email tab and blur key
             setTimeout(() => {
-              if (window.walletKeyPair && window.bech32Address) {
+              if (window.isWalletReady && window.isWalletReady()) {
                 hideEmailTab();
                 isEmailConnected = false;
                 currentMnemonic = null;
@@ -1448,7 +1497,7 @@
       tabs.forEach(btn => btn.addEventListener('click', () => {
         const target = btn.dataset.tab;
         const needsImport = (target === 'tab-send' || target === 'tab-msg');
-        const isImported = !!(window.walletKeyPair);
+        const isImported = !!(window.isWalletReady && window.isWalletReady());
 
         // Require wallet import for send and messaging tabs
         if (needsImport && !isImported) {
@@ -1479,7 +1528,9 @@
           if (!sel || !out) return;
 
           const val = sel.value;
-          const addr = (val === 'p2tr') ? (window.taprootAddress || '') : (window.bech32Address || '');
+          const addr = (val === 'p2tr') ?
+            (window.getTaprootAddress ? window.getTaprootAddress() : '') :
+            (window.getWalletAddress ? window.getWalletAddress() : '');
           if (!addr) {
             out.textContent = '0.00000000';
             return;
@@ -1558,5 +1609,103 @@
       });
     })();
   </script>
+
+<!-- Inbox modal -->
+<div id="msgModal" style="display:none; position:fixed; inset:0; z-index:1002; backdrop-filter: blur(4px);">
+  <div style="position:absolute; inset:0; background:rgba(0,0,0,.35);" data-close></div>
+  <div style="position:fixed; left:50%; top:50%; transform:translate(-50%,-50%);
+              max-width:700px; width:90%; background:var(--glass-bg); border:1px solid var(--glass-border);
+              border-radius:20px; box-shadow:var(--shadow-hover); padding:1.25rem;">
+    <div style="display:flex; justify-content:space-between; align-items:center; gap:.75rem;">
+  <div style="display:flex; align-items:center; gap:.5rem; font-weight:700;">
+    <span>📩</span>
+    <span id="msgFrom" style="font-family:monospace; opacity:.9;"></span>
+  </div>
+  <button data-close class="reveal-btn">✖</button>
+</div>
+    <hr style="margin:.75rem 0; border:none; border-top:1px solid var(--glass-border);" />
+    <div id="msgBody" style="padding:1rem; border-radius:16px; background:var(--glass-bg); max-height:60vh; overflow-y:auto; white-space:pre-wrap; border-left:4px solid #2196f3; min-height:120px; max-height:60vh; overflow-y:auto; word-break:break-word; white-space:pre-wrap;">
+    </div>
+  </div>
+</div>
+
+
+<script>
+  // Simple HTML escape
+  const __esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+  // Modal open/close
+  window.openMessageModal = function(msg){
+    const modal = document.getElementById('msgModal');
+    if (!modal) return;
+    document.getElementById('msgFrom').textContent = msg.senderBech32 || msg.from || 'nito1…';
+    // Allow plain text only; if you already sanitize elsewhere, you can swap to innerHTML
+    document.getElementById('msgBody').textContent = msg.body || msg.message || '[vide]';
+    modal.style.display = 'block';
+  };
+  (function(){
+    const modal = document.getElementById('msgModal');
+    if (modal) {
+      modal.addEventListener('click', (e) => { if (e.target.matches('[data-close]')) modal.style.display = 'none'; });
+    }
+  })();
+
+  // Email-style rendering for the message list
+  // messages: Array<{ txid, senderBech32, time, preview, body }>
+  // Simple HTML escape
+  window.__mailEsc = window.__mailEsc || function(s){ return String(s || '').replace(/[&<>"']/g, function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]; }); };
+
+  // Modal open/close
+  window.openMessageModal = function(msg){
+    const modal = document.getElementById('msgModal');
+    if (!modal) return;
+    document.getElementById('msgFrom').textContent = msg.senderBech32 || msg.from || 'nito1…';
+    document.getElementById('msgBody').textContent = msg.body || msg.message || '[vide]';
+    modal.style.display = 'block';
+  };
+  (function(){
+    const modal = document.getElementById('msgModal');
+    if (modal) {
+      modal.addEventListener('click', (e) => { if (e.target.matches('[data-close]')) modal.style.display = 'none'; });
+    }
+  })();
+
+  // Email-style rendering for the message list
+  // messages: Array<{ id, senderBech32, time, body }>
+  window.renderInboxEmailStyle = function(messages){
+    const list = document.getElementById('messageList');
+    if (!list) return;
+    list.style.display = 'block';
+    if (!messages || !messages.length) {
+      list.innerHTML = '<div class="message-item">Aucun message reçu</div>';
+      return;
+    }
+    var htmlRows = '';
+    for (var i = 0; i < messages.length; i++) {
+      var m = messages[i];
+      var when = m.time ? new Date(m.time * 1000) : null;
+      var timeStr = when ? when.toLocaleString() + ' GMT+2' : '';
+      htmlRows += '<div class="inbox-row" data-id="' + window.__mailEsc(m.id) + '">'
+                +   '<div class="inbox-from">' + window.__mailEsc(m.senderBech32 || m.from || 'nito1…') + '</div>'
+                +   '<div class="inbox-time">' + window.__mailEsc(timeStr) + '</div>'
+                + '</div>';
+    }
+    list.innerHTML = htmlRows;
+
+    // Click to open
+    list.onclick = function(e){
+      var row = e.target.closest('.inbox-row');
+      if (!row) return;
+      var id = row.getAttribute('data-id');
+      var msg = null;
+      for (var j = 0; j < messages.length; j++) {
+        if (String(messages[j].id) === String(id)) { msg = messages[j]; break; }
+      }
+      if (!msg) return;
+      window.openMessageModal(msg);
+    };
+  };
+</script>
+
 </body>
 </html>
