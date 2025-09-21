@@ -2183,7 +2183,7 @@ window.addEventListener('load', async () => {
       'themeToggle', 'languageSelect', 'generateButton', 'importWalletButton', 'refreshBalanceButton',
       'prepareTxButton', 'broadcastTxButton', 'cancelTxButton',
       'destinationAddress', 'amountNito', 'feeNito', 'debitAddressType', 'privateKeyWIF',
-      'walletAddress', 'walletBalance', 'txHexContainer', 'signedTx', 'copyTxHex', 'generatedAddress',
+      'walletAddress', 'txHexContainer', 'signedTx', 'copyTxHex', 'generatedAddress',
       'inactivityTimer',
       'keyCounter',
       'hdMasterKey', 'mnemonicPhrase', 'copyHdKey', 'copyMnemonic',
