@@ -618,6 +618,43 @@ async function fetchRawTxHex(txid) {
   return hex;
 }
 
+
+// --- Maturity filtering helpers (coinbase >=100 conf, others >=1 conf) ---
+async function checkUtxoMaturity(txid, vout) {
+  try {
+    const utxoInfo = await rpc('gettxout', [txid, vout, true]);
+    if (!utxoInfo) return null; // already spent or unknown
+    const conf = utxoInfo.confirmations || 0;
+    if (utxoInfo.coinbase) {
+      if (conf < 100) return null;
+    } else {
+      if (conf < 1) return null;
+    }
+    return { spendable: true, confirmations: conf, coinbase: !!utxoInfo.coinbase };
+  } catch (e) {
+    console.error('checkUtxoMaturity error for', txid, vout, e);
+    return null;
+  }
+}
+
+async function filterMatureUtxos(list) {
+  if (!Array.isArray(list) || !list.length) return [];
+  const BATCH_SIZE = 5;
+  const out = [];
+  for (let i = 0; i < list.length; i += BATCH_SIZE) {
+    const batch = list.slice(i, i + BATCH_SIZE);
+    const results = await Promise.all(batch.map(async (u) => {
+      const m = await checkUtxoMaturity(u.txid, u.vout);
+      return m ? u : null;
+    }));
+    for (const u of results) if (u) out.push(u);
+    if (i + BATCH_SIZE < list.length) { try { await sleep(50); } catch(_) {} }
+  }
+  return out;
+}
+// --- End maturity helpers ---
+
+
 /**
  * Global wallet state management
  */
@@ -1468,16 +1505,16 @@ async function utxos(addr) {
     if (walletState.importType === 'hd' && hdManager.hdWallet) {
       const addrType = AddressManager.getAddressType(addr);
       if (addrType === 'p2wpkh') {
-        return await utxoScanner.utxosAllForBech32();
+        return await filterMatureUtxos(await utxoScanner.utxosAllForBech32());
       } else if (addrType === 'p2tr') {
-        return await utxoScanner.scanHdUtxosForFamilyDescriptor('taproot');
+        return await filterMatureUtxos(await utxoScanner.scanHdUtxosForFamilyDescriptor('taproot'));
       }
     }
     
     const scan = await rpc('scantxoutset', ['start', [`addr(${addr})`]]);
     if (!scan.success || !scan.unspents) return [];
     
-    return scan.unspents.map(u => {
+    const validUtxos = scan.unspents.map(u => {
       if (!/^[0-9a-fA-F]+$/.test(u.scriptPubKey)) {
         throw new Error(`Invalid scriptPubKey for UTXO ${u.txid}:${u.vout}`);
       }
@@ -1493,7 +1530,9 @@ async function utxos(addr) {
         scriptType
       };
     });
-  } catch (e) {
+  
+    return await filterMatureUtxos(validUtxos);
+} catch (e) {
     console.error('Error fetching UTXO:', e);
     throw e;
   }
