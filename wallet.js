@@ -736,7 +736,7 @@ function armInactivityTimerSafely(){
   try {
     if (window.__timerContext === 'generation') {
       if (walletState && typeof walletState.updateLastActionTime === 'function') {
-        armInactivityTimerSafely();
+        walletState.updateLastActionTime();
         if (typeof updateInactivityTimer === 'function') { try { updateInactivityTimer(); } catch(e){} }
       }
     }
@@ -2245,8 +2245,8 @@ window.addEventListener('load', async () => {
     $('copyMnemonic').onclick = () => copyToClipboard('mnemonicPhrase');
 
     $('generateButton').onclick = async () => {
-      armInactivityTimerSafely();
       window.__timerContext = 'generation';
+      armInactivityTimerSafely();
 
       syncLegacyVariables();
       try {
@@ -2332,6 +2332,8 @@ window.addEventListener('load', async () => {
 
         await incrementCounter();
         await updateCounterDisplay();
+        walletState.updateLastActionTime();
+        updateInactivityTimer();
       } catch (e) {
         alert(i18next.t('errors.generation_error', { message: e.message }));
         console.error('Generation error:', e);
