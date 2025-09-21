@@ -2246,6 +2246,8 @@ window.addEventListener('load', async () => {
 
     $('generateButton').onclick = async () => {
       armInactivityTimerSafely();
+      window.__timerContext = 'generation';
+
       syncLegacyVariables();
       try {
         const mnemonic = hdManager.generateMnemonic(24);
@@ -2337,7 +2339,13 @@ window.addEventListener('load', async () => {
     };
 
     $('importWalletButton').onclick = async () => {
+  const btn = $('importWalletButton');
+  const originalText = btn ? btn.textContent : '';
+  if (btn) { btn.disabled = true; btn.textContent = '⏳..'; }
+
       syncLegacyVariables();
+      window.__timerContext = null;
+
       try {
         const input = $('privateKeyWIF').value.trim();
         const hdPassphrase = '';
@@ -2397,7 +2405,7 @@ window.addEventListener('load', async () => {
         }
 
         $('walletAddress').innerHTML = DOMPurify.sanitize(addressDisplay);
-        $('walletBalance').innerHTML = `Bech32: ${bech32Balance.toFixed(8)}` + (walletState.importType === 'hd' ? ` | Bech32m (Taproot): ${taprootBalance.toFixed(8)} ` : ' NITO');
+
 
         const filteredAddresses = {
           legacy: addresses.legacy,
@@ -2406,12 +2414,78 @@ window.addEventListener('load', async () => {
           taproot: addresses.taproot
         };
         console.log('Wallet imported (public info only):', filteredAddresses);
+        try { setTimeout(() => {
+          var tabGen = document.getElementById('tab-gen');
+          if (tabGen) {
+            var firstSection = tabGen.querySelector(':scope > .section');
+            if (firstSection) firstSection.style.display = 'none';
+          }
+        }, 0); } catch(_) {}
+
+        // Force-hide the first generation section inside #tab-gen (title + generate + reveals + timer)
+        try {
+          var tabGen = document.getElementById('tab-gen');
+          if (tabGen) {
+            var firstSection = tabGen.querySelector(':scope > .section');
+            if (firstSection) firstSection.style.display = 'none';
+          }
+        } catch(e) { console.warn('Hide gen first-section fallback:', e); }
+
+        // Robustly hide ONLY the Generation UI (keep Importer + other tabs visible)
+        try {
+          // Strategy A: hide the whole generation section by title -> nearest .section
+          var genTitle = document.querySelector('[data-i18n="generate_section.title"]');
+          var hidAnything = false;
+          if (genTitle) {
+            var genSection = genTitle.closest('.section');
+            if (genSection) { genSection.style.display = 'none'; hidAnything = true; }
+          }
+          // Strategy B: explicitly hide common generation elements if still visible
+          var idsToHide = ['generateButton','hdMasterKey','mnemonicPhrase','generatedAddress','inactivityTimer'];
+          idsToHide.forEach(function(id){
+            var el = document.getElementById(id);
+            if (el) { el.style.display = 'none'; hidAnything = true; }
+          });
+          // Strategy C: hide any copy buttons inside #tab-gen that belong to generation block
+          var tabGen = document.getElementById('tab-gen');
+          if (tabGen) {
+            var copyBtns = tabGen.querySelectorAll('.copy-btn');
+            copyBtns.forEach(function(btn){
+              // hide only those that are within/near generation content
+              // Heuristic: if button is before the import section title inside tab-gen
+              var importTitle = tabGen.querySelector('[data-i18n="import_section.title"]');
+              if (!importTitle || (btn.compareDocumentPosition(importTitle) & Node.DOCUMENT_POSITION_FOLLOWING)) {
+                btn.style.display = 'none'; hidAnything = true;
+              }
+            });
+          }
+          if (!hidAnything) { console.warn('Generation UI hide: nothing matched (fallback ok)'); }
+        } catch (e) {
+          console.warn('Hide generation UI warning (robust):', e);
+        }
+
+
 
         // Sync for messaging compatibility
         window.hasWallet = () => walletState.keyManager.hasKey('bech32KeyPair');
         window.getWalletAddress = () => walletState.bech32Address;
         window.getTaprootAddress = () => walletState.taprootAddress;
         window.isWalletReady = () => walletState.bech32Address && walletState.keyManager.hasKey('bech32KeyPair');
+        if (typeof btn !== 'undefined' && btn) { btn.style.display = 'none'; }
+        // Hide entire Key/Mnemonic tab content after successful import
+        try {
+          const keyFormEl = document.getElementById('keyForm');
+          if (keyFormEl) keyFormEl.style.display = 'none';
+          const wifEl = document.getElementById('privateKeyWIF');
+          if (wifEl) wifEl.style.display = 'none';if (keyFormEl) {
+            const copyBtns = keyFormEl.querySelectorAll('.copy-btn');
+            copyBtns.forEach(function(el){ el.style.display = 'none'; });
+          }
+        } catch (hideErr) {
+          console.warn('Hide key/mnemonic tab elements warning:', hideErr);
+        }
+    
+
 
         // Variables d'adresses uniquement (pas de clés)
         window.bech32Address = walletState.bech32Address;
@@ -2428,20 +2502,7 @@ window.addEventListener('load', async () => {
         syncLegacyVariables();
 
         $('privateKeyWIF').classList.add('blurred-input');
-
-        const revealWifInput = $('revealWifInput');
-        if (revealWifInput) {
-          revealWifInput.onclick = () => {
-            revealWifInput.disabled = true;
-            $('privateKeyWIF').classList.remove('blurred-input');
-            setTimeout(() => {
-              $('privateKeyWIF').classList.add('blurred-input');
-              revealWifInput.disabled = false;
-            }, 10000);
-          };
-        }
-
-        const copyBech32Addr = $('copyBech32Addr');
+const copyBech32Addr = $('copyBech32Addr');
         if (copyBech32Addr) copyBech32Addr.onclick = () => copyToClipboard('bech32Address');
 
         const copyTaprootAddr = $('copyTaprootAddr');
@@ -2469,7 +2530,27 @@ window.addEventListener('load', async () => {
           }
         }
 
-        const consolidateContainer = document.querySelector('.consolidate-container');
+        // Masquer l'onglet Email/Password après import réussi
+          if (typeof hideEmailTab === 'function') hideEmailTab();
+
+          // Supprimer complètement la ligne de solde (garde le bouton refresh)
+          const balanceLabel = document.querySelector('[data-i18n="import_section.balance"]');
+          const walletBalanceEl = $('walletBalance');
+
+          if (balanceLabel) balanceLabel.remove();
+          if (walletBalanceEl) {
+            // Supprimer aussi le texte "NITO" qui suit
+            const parent = walletBalanceEl.parentNode;
+            if (parent) {
+              Array.from(parent.childNodes).forEach(node => {
+                if (node.nodeType === Node.TEXT_NODE && node.textContent.trim() === 'NITO') {
+                  node.remove();
+                }
+              });
+            }
+            walletBalanceEl.remove();
+          }
+          const consolidateContainer = document.querySelector('.consolidate-container');
         if (!consolidateContainer) {
           console.error('Consolidate container not found');
           return;
@@ -2482,7 +2563,7 @@ window.addEventListener('load', async () => {
           consolidateContainer.appendChild(consolidateButton);
           consolidateButton.onclick = () => consolidateUtxos();
           walletState.consolidateButtonInjected = true;
-          console.log('Consolidate button injected');
+console.log('Consolidate button injected');
         } else {
           const existingButton = $('consolidateButton');
           existingButton.textContent = i18next.t('send_section.consolidate_button');
@@ -2535,8 +2616,11 @@ window.addEventListener('load', async () => {
                 amount: maxAmount.toFixed(8),
                 fees: (fees / 1e8).toFixed(8),
                 utxos: selectedIns.length
-              }));
-            } catch (e) {
+              
+        
+}));
+            }
+            catch (e) {
               hideLoadingSpinner();
               alert(`Erreur: ${e.message}`);
             }
@@ -2545,6 +2629,17 @@ window.addEventListener('load', async () => {
         
         syncLegacyVariables();
       } catch (e) {
+        if (typeof btn !== 'undefined' && btn) {
+          btn.disabled = false;
+          try {
+            btn.textContent = (window.i18next && i18next.t)
+              ? i18next.t('import_section.import_button')
+              : (originalText || '📥 Importer');
+          } catch (_) {
+            btn.textContent = originalText || '📥 Importer';
+          }
+        }
+
         alert(i18next.t('errors.import_error', { message: e.message }));
         console.error('Import error:', e);
       }
@@ -2557,13 +2652,9 @@ window.addEventListener('load', async () => {
       try {
         const bech32Balance = await balance(walletState.bech32Address);
         let taprootBalance = 0;
-        let balanceDisplay = `Bech32: ${bech32Balance.toFixed(8)} `;
-
-        if (walletState.importType === 'hd') {
+if (walletState.importType === 'hd') {
           taprootBalance = await balance(walletState.taprootAddress);
-          balanceDisplay = `Bech32: ${bech32Balance.toFixed(8)} | Bech32m (Taproot): ${taprootBalance.toFixed(8)} `;
         }
-
         if (!await AddressManager.validateAddress(walletState.bech32Address) || (walletState.importType === 'hd' && !await AddressManager.validateAddress(walletState.taprootAddress))) {
           throw new Error(i18next.t('errors.invalid_addresses'));
         }
@@ -2577,9 +2668,7 @@ window.addEventListener('load', async () => {
         }
 
         $('walletAddress').innerHTML = DOMPurify.sanitize(addressDisplay);
-        $('walletBalance').innerHTML = balanceDisplay;
-
-        const copyBech32Addr = $('copyBech32Addr');
+const copyBech32Addr = $('copyBech32Addr');
         if (copyBech32Addr) copyBech32Addr.onclick = () => copyToClipboard('bech32Address');
 
         const copyTaprootAddr = $('copyTaprootAddr');
@@ -2714,3 +2803,91 @@ await showSuccessPopup(txid);
     console.error('Connection error:', e);
   }
 });
+
+
+/**
+ * Unified import function exposed globally for index.html simplified auth UI.
+ * Supports two signatures:
+ *  - importWallet(email, password) -> derives a deterministic mnemonic and imports HD wallet
+ *  - importWallet(input) -> input can be mnemonic, xprv, WIF, or 64-hex private key
+ */
+(function(){
+  function detectImportType(input) {
+    const trimmed = (input || '').trim();
+    if (!trimmed) return null;
+    if (trimmed.startsWith('xprv')) return 'xprv';
+    try {
+      if (bip39.validateMnemonic(trimmed)) return 'mnemonic';
+    } catch(_) {}
+    // Simple WIF heuristic: Base58, length 51-52, starts with '5', 'K', or 'L'
+    if (/^[123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz]{51,52}$/.test(trimmed) &&
+        /^[5KL]/.test(trimmed)) return 'wif';
+    // 64-hex
+    if (/^[0-9a-fA-F]{64}$/.test(trimmed)) return 'hex';
+    return 'unknown';
+  }
+
+  
+  
+  
+  async function deriveMnemonicFromCredentials(email, password, wordCount = 24) {
+    const enc = new TextEncoder();
+    const salt = enc.encode('nito-mnemonic:' + String(email || '').trim().toLowerCase());
+    const keyMaterial = await crypto.subtle.importKey(
+      'raw',
+      enc.encode(String(password || '')),
+      { name: 'PBKDF2' },
+      false,
+      ['deriveBits']
+    );
+    const bits = await crypto.subtle.deriveBits(
+      {
+        name: 'PBKDF2',
+        hash: 'SHA-512',
+        salt,
+        iterations: 200000
+      },
+      keyMaterial,
+      256  // 32 bytes -> 24-word mnemonic
+    );
+    const entropy = new Uint8Array(bits);
+    const hex = Array.from(entropy).map(b => b.toString(16).padStart(2, '0')).join('');
+    return bip39.entropyToMnemonic(hex);
+  }
+  
+  async function triggerExistingImportFlow(input) {
+    const inputEl = document.getElementById('privateKeyWIF');
+    const btn = document.getElementById('importWalletButton');
+    if (!inputEl || !btn) throw new Error('UI elements not ready for import');
+    inputEl.value = input;
+    // Call the same logic as the existing handler to ensure consistent UI state
+    await btn.onclick();
+  }
+
+  window.importWallet = async function(arg1, arg2) {
+    window.__timerContext = null;
+
+    try {
+      if (typeof arg2 === 'string' && typeof arg1 === 'string') {
+        // email/password path
+        const email = arg1.trim();
+        const password = arg2.trim();
+        if (!email || !password) throw new Error('Missing credentials');
+        const mnemonic = await deriveMnemonicFromCredentials(email, password, 12);
+        await triggerExistingImportFlow(mnemonic);
+        return { success: true, importType: 'email', mnemonic };
+      } else {
+        // single input path
+        const input = (arg1 || '').toString().trim();
+        if (!input) throw new Error('Empty input');
+        const importType = detectImportType(input) || 'unknown';
+        await triggerExistingImportFlow(input);
+        return { success: true, importType };
+      }
+    } catch (e) {
+      console.error('window.importWallet error:', e);
+      return { success: false, error: e.message || String(e) };
+    }
+  };
+})();
+
