@@ -984,7 +984,6 @@
         <!-- Key/Mnemonic import form -->
         <div id="keyForm" class="auth-form">
           <textarea id="privateKeyWIF" placeholder="WIF/Hex/mnémotechnique HD/XPRV HD" style="width: 100%; height: 80px; resize: vertical;"></textarea>
-          <button id="revealWifInput" class="reveal-btn" data-i18n="generate_section.reveal">👁️ Révéler</button>
           <button id="importWalletButton" data-i18n="import_section.import_button">📥 Importer</button>
         </div>
 
@@ -1093,23 +1092,6 @@
   </div>
 
   <!-- === CORE JAVASCRIPT MODULES === -->
-
-  <!-- BIP39 mnemonic generation module -->
-  <script type="module">
-    import * as bip39 from 'https://esm.sh/bip39@3.1.0';
-    import { Buffer } from 'https://esm.sh/buffer@6.0.3';
-    window.Buffer = Buffer;
-
-    // Generate mnemonic from email/password using PBKDF2 key derivation
-    window.getMnemonicFromCredentials = async function(email, password) {
-      const enc = new TextEncoder();
-      const salt = enc.encode('nito-mnemonic:' + String(email || '').trim().toLowerCase());
-      const keyMaterial = await crypto.subtle.importKey('raw', enc.encode(String(password || '')), { name: 'PBKDF2' }, false, ['deriveBits']);
-      const bits = await crypto.subtle.deriveBits({ name: 'PBKDF2', hash: 'SHA-512', salt, iterations: 200000 }, keyMaterial, 256);
-      const entropy = new Uint8Array(bits);
-      return bip39.entropyToMnemonic(Buffer.from(entropy));
-    };
-  </script>
 
   <!-- Mobile browser zoom management -->
   <script>
@@ -1348,83 +1330,46 @@
 
           try {
             connectBtn.disabled = true;
-            connectBtn.textContent = '⏳ Connexion...';
+            connectBtn.textContent = '⏳..';
 
-            // Generate mnemonic from email/password using PBKDF2
-            if (typeof window.getMnemonicFromCredentials === 'function') {
-              const mnemonic = await window.getMnemonicFromCredentials(email, password);
-
-              if (mnemonic) {
-                // Reset any existing wallet state
-                if (window.walletKeyPair) {
-                  window.walletKeyPair = null;
-                  window.bech32Address = null;
-                  window.taprootAddress = null;
-                  // Clear balance display
-                  const walletAddress = document.getElementById('walletAddress');
-                  const walletBalance = document.getElementById('walletBalance');
-                  if (walletAddress) walletAddress.textContent = '';
-                  if (walletBalance) walletBalance.textContent = '0.00000000';
-                }
-
-                currentLoginType = 'email';
-                currentMnemonic = mnemonic;
-
-                // Use existing import logic by populating WIF field
-                const wifInput = document.getElementById('privateKeyWIF');
-                if (wifInput) {
-                  wifInput.value = mnemonic;
-
-                  // Trigger import process
-                  const importBtn = document.getElementById('importWalletButton');
-                  if (importBtn) {
-                    importBtn.click();
-
-                    // Wait for wallet initialization with periodic checks
-                    let attempts = 0;
-                    const checkWallet = setInterval(() => {
-                      attempts++;
-                      console.log(`Verification ${attempts}: walletKeyPair=${!!window.walletKeyPair}, bech32Address=${!!window.bech32Address}`);
-
-                      if (window.isWalletReady && window.isWalletReady()) {
-                        // Security: Clear the private key field after successful import
-                        try {
-                          var privateKeyWIF = document.getElementById('privateKeyWIF');
-                          if (privateKeyWIF) {
-                            privateKeyWIF.value = '';
-                            privateKeyWIF.setAttribute('value','');
-                          }
-                        } catch(e){}
-
-                        clearInterval(checkWallet);
-
-                        // Update UI for successful email authentication
-                        emailInputs.style.display = 'none';
-                        connectBtn.style.display = 'none';
-                        emailSeedBtn.style.display = 'inline-block';
-
-                        // Hide key/seed tab since email authentication succeeded
-                        hideKeyTab();
-
-                        // Mark as connected via email
-                        isEmailConnected = true;
-
-                        console.log('Email authentication successful - UI updated');
-                      } else if (attempts > 10) {
-                        // Timeout after 10 attempts (5 seconds)
-                        clearInterval(checkWallet);
-                        connectBtn.textContent = '🔐 Se connecter';
-                        connectBtn.disabled = false;
-                        console.log('Authentication failed - timeout after 10 attempts');
-                      }
-                    }, 500);
-                  }
-                }
-              }
-            } else {
-              throw new Error('Mnemonic generation function not available');
+            // Email/password login via wallet.js unified API
+            const result = await (window.importWallet && window.importWallet(email, password));
+            if (!result || !result.success) {
+              throw new Error(result && result.error ? result.error : 'Échec de l’import via wallet.js');
             }
-          } catch (error) {
+
+            // Save mnemonic for copy button if provided
+            currentMnemonic = result.mnemonic || null;
+            currentLoginType = 'email';
+
+            // Wait until wallet.js finishes initializing UI state
+            let attempts = 0;
+            const checkWallet = setInterval(() => {
+              attempts++;
+              if (window.isWalletReady) {
+                clearInterval(checkWallet);
+
+                // Update UI for successful email authentication
+                emailInputs.style.display = 'none';
+                connectBtn.style.display = 'none';
+                emailSeedBtn.style.display = 'inline-block';
+
+                // Hide key/seed tab since email authentication succeeded
+                if (typeof hideKeyTab === 'function') hideKeyTab();
+                else if (tabKey) tabKey.style.display = 'none';
+
+                // Mark as connected via email
+                isEmailConnected = true;
+
+                console.log('Email authentication successful - UI updated');
+              } else if (attempts > 100) {
+                clearInterval(checkWallet);
+                alert('Timeout: le portefeuille n’a pas fini son initialisation.');
+                connectBtn.textContent = '🔐 Se connecter';
+                connectBtn.disabled = false;
+              }
+            }, 100);
+} catch (error) {
             console.error('Authentication error:', error);
             alert('Erreur lors de la connexion: ' + error.message);
             connectBtn.textContent = '🔐 Se connecter';
