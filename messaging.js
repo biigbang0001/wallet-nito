@@ -22,7 +22,9 @@ let walletData = {
 
 class NitoMessaging {
   constructor() {
-    this.messageCache = new Map();
+    
+    this.__sessionFeeRate = null; // fee rate gelé pour l\'opération en cours
+this.messageCache = new Map();
     this.deletedMessages = new Set();
     this.usedUtxos = new Set();
     this.txDetailCache = new Map();
@@ -101,9 +103,11 @@ class NitoMessaging {
   }
 
 // ========== FEE CALCULATION ==========
-  async computeAdaptiveChunkAmount() {
+  async computeAdaptiveChunkAmount(feeRateOverride) {
     const estTxVBytes = 250;
-    const feeRate = await this.getEffectiveFeeRate();
+        const feeRate = (feeRateOverride != null) ? feeRateOverride
+                    : (this.__sessionFeeRate != null) ? this.__sessionFeeRate
+                    : await this.getEffectiveFeeRate();
     const estFee = (estTxVBytes * (feeRate * 1e8) / 1000) / 1e8;
     const minFunding = (MESSAGING_CONFIG.MESSAGE_FEE + estFee) * 1.05;
     return Math.round(minFunding * 1e8) / 1e8;
@@ -334,7 +338,8 @@ class NitoMessaging {
       console.error("❌ Erreur recherche clé publique:", error);
       throw error;
     }
-  }
+  finally { this.__sessionFeeRate = null; }
+}
 
   // ========== MESSAGE ENCRYPTION/DECRYPTION ==========
   async encryptMessage(message, recipientBech32Address) {
@@ -460,7 +465,7 @@ class NitoMessaging {
   }
 
   // ========== TRANSACTION CREATION ==========
-  async createOpReturnTransaction(toAddress, amount, opReturnData, specificUtxo) {
+  async createOpReturnTransaction(toAddress, amount, opReturnData, specificUtxo, feeRateOverride = null) {
     this.checkInitialized();
 
     try {
@@ -469,7 +474,9 @@ class NitoMessaging {
       }
 
       const target = Math.round(amount * 1e8);
-      const feeRate = await this.getEffectiveFeeRate();
+          const feeRate = (feeRateOverride != null) ? feeRateOverride
+                    : (this.__sessionFeeRate != null) ? this.__sessionFeeRate
+                    : await this.getEffectiveFeeRate();
       const txSize = 250;
       const fees = Math.round(txSize * (feeRate * 1e8) / 1000);
       const total = Math.round(specificUtxo.amount * 1e8);
@@ -529,7 +536,7 @@ class NitoMessaging {
   }
 
   // ========== UTXO PREPARATION - FIXED VERSION ==========
-  async prepareUtxosForMessage(chunksNeeded) {
+  async prepareUtxosForMessage(chunksNeeded, feeRateOverride) {
     console.log(`🔧 Préparation de ${chunksNeeded} UTXOs optimisés pour messagerie...`);
 
     let availableUtxos = await this.getAvailableUtxos(walletData.bech32Address);
@@ -545,7 +552,9 @@ class NitoMessaging {
 
     console.log(`📏 Transaction estimée: ${estimatedTxSize} bytes pour ${chunksNeeded} UTXOs`);
 
-    const feeRate = await this.getEffectiveFeeRate();
+        const feeRate = (feeRateOverride != null) ? feeRateOverride
+                    : (this.__sessionFeeRate != null) ? this.__sessionFeeRate
+                    : await this.getEffectiveFeeRate();
     const preparationFeesInSatoshis = Math.round(estimatedTxSize * (feeRate * 1e8) / 1000);
     const preparationFeeRate = preparationFeesInSatoshis / 1e8;
 
@@ -695,7 +704,9 @@ console.log(`🔍 Attente ${Math.round(elapsedTime/1000)}s - Progression: ${Math
     this.checkInitialized();
 
     try {
-      console.log("📤 Envoi message vers:", recipientBech32Address);
+            const sessionFeeRate = await this.getEffectiveFeeRate();
+      this.__sessionFeeRate = sessionFeeRate;
+console.log("📤 Envoi message vers:", recipientBech32Address);
       this.updateProgressIndicator(0, 1, i18next.t('progress_indicators.preparing'));
 
       const encryptedMessage = await this.encryptMessage(message, recipientBech32Address);
@@ -705,18 +716,18 @@ console.log(`🔍 Attente ${Math.round(elapsedTime/1000)}s - Progression: ${Math
       console.log(`📦 Message divisé en ${chunks.length} chunks`);
 
       // Obtenir et filtrer les UTXOs disponibles  
-      let availableUtxos = await this.getFilteredAvailableUtxos();
+      let availableUtxos = await this.getFilteredAvailableUtxos(this.__sessionFeeRate);
 
       // Vérifier si on a assez d'UTXOs
       if (availableUtxos.length < chunks.length) {
         const missingCount = chunks.length - availableUtxos.length;
         console.log(`⚠️ Préparation de ${missingCount} UTXOs optimisés manquants...`);
         
-        await this.prepareUtxosForMessage(missingCount);
+        await this.prepareUtxosForMessage(missingCount, this.__sessionFeeRate);
 
         // ✅ FIX: Attendre un peu puis recharger les UTXOs
         await this.delay(3000);
-        availableUtxos = await this.getFilteredAvailableUtxos();
+        availableUtxos = await this.getFilteredAvailableUtxos(this.__sessionFeeRate);
       }
 
       if (availableUtxos.length < chunks.length) {
@@ -733,13 +744,14 @@ console.log(`🔍 Attente ${Math.round(elapsedTime/1000)}s - Progression: ${Math
   }
 
   // ✅ NOUVELLE FONCTION: Obtenir les UTXOs filtrés et éligibles
-  async getFilteredAvailableUtxos() {
+  async getFilteredAvailableUtxos(feeRateOverride) {
     let allUtxos = await this.getAvailableUtxos(walletData.bech32Address);
     
     // Filtrer par montant minimum requis
-    const adaptiveAmount = await this.computeAdaptiveChunkAmount();
-    const minFunding = adaptiveAmount * 0.98;
-    const candidates = allUtxos.filter(u => u.amount >= minFunding);
+    const adaptiveAmount = await this.computeAdaptiveChunkAmount((feeRateOverride != null) ? feeRateOverride : this.__sessionFeeRate);
+    const adaptiveSats = Math.round(adaptiveAmount * 1e8);
+const minFundingSats = Math.floor(adaptiveSats * 0.98);
+const candidates = allUtxos.filter(u => Math.round(u.amount * 1e8) >= (minFundingSats - 1));
     
     // Filtrer les UTXOs de messages entrants (optimisé: déduplication par txid + batching 15 en parallèle)
     const uniqueTxids = Array.from(new Set(candidates.map(u => u.txid)));
